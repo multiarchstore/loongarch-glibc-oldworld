@@ -1,0 +1,92 @@
+From 08cba83d28497f933b4bbfcaf4bb76cb77326112 Mon Sep 17 00:00:00 2001
+From: Xiaolin Tang <tangxiaolin@loongson.cn>
+Date: Wed, 14 Dec 2022 11:47:35 +0800
+Subject: [PATCH 10/44] LoongArch: Hard Float Support for functions copysign{f/
+ }.
+
+Use hardware Floating-point instruction fcopysign.{s/d} to
+implement functions copysign{f/ }.
+
+Change-Id: I685cd6c9100127f0e047dfbe7fa989b075be637f
+---
+ sysdeps/loongarch/fpu/s_copysign.c  | 30 +++++++++++++++++++++++++++++
+ sysdeps/loongarch/fpu/s_copysignf.c | 30 +++++++++++++++++++++++++++++
+ 2 files changed, 60 insertions(+)
+ create mode 100644 sysdeps/loongarch/fpu/s_copysign.c
+ create mode 100644 sysdeps/loongarch/fpu/s_copysignf.c
+
+diff --git a/sysdeps/loongarch/fpu/s_copysign.c b/sysdeps/loongarch/fpu/s_copysign.c
+new file mode 100644
+index 0000000000..861c461089
+--- /dev/null
++++ b/sysdeps/loongarch/fpu/s_copysign.c
+@@ -0,0 +1,30 @@
++/* copysign().  LoongArch version.
++   Copyright (C) 2017-2022 Free Software Foundation, Inc.
++
++   This file is part of the GNU C Library.
++
++   The GNU C Library is free software; you can redistribute it and/or
++   modify it under the terms of the GNU Lesser General Public
++   License as published by the Free Software Foundation; either
++   version 2.1 of the License, or (at your option) any later version.
++
++   The GNU C Library is distributed in the hope that it will be useful,
++   but WITHOUT ANY WARRANTY; without even the implied warranty of
++   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++   Lesser General Public License for more details.
++
++   You should have received a copy of the GNU Lesser General Public
++   License along with the GNU C Library.  If not, see
++   <https://www.gnu.org/licenses/>.  */
++
++#define NO_MATH_REDIRECT
++#include <math.h>
++#include <libm-alias-double.h>
++
++double
++__copysign (double x, double y)
++{
++  asm ("fcopysign.d %0, %1, %2" : "=f" (x) : "f" (x), "f" (y));
++  return x;
++}
++libm_alias_double (__copysign, copysign)
+diff --git a/sysdeps/loongarch/fpu/s_copysignf.c b/sysdeps/loongarch/fpu/s_copysignf.c
+new file mode 100644
+index 0000000000..c680b1fdf5
+--- /dev/null
++++ b/sysdeps/loongarch/fpu/s_copysignf.c
+@@ -0,0 +1,30 @@
++/* copysignf().  LoongArch version.
++   Copyright (C) 2017-2022 Free Software Foundation, Inc.
++
++   This file is part of the GNU C Library.
++
++   The GNU C Library is free software; you can redistribute it and/or
++   modify it under the terms of the GNU Lesser General Public
++   License as published by the Free Software Foundation; either
++   version 2.1 of the License, or (at your option) any later version.
++
++   The GNU C Library is distributed in the hope that it will be useful,
++   but WITHOUT ANY WARRANTY; without even the implied warranty of
++   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++   Lesser General Public License for more details.
++
++   You should have received a copy of the GNU Lesser General Public
++   License along with the GNU C Library.  If not, see
++   <https://www.gnu.org/licenses/>.  */
++
++#define NO_MATH_REDIRECT
++#include <math.h>
++#include <libm-alias-float.h>
++
++float
++__copysignf (float x, float y)
++{
++  asm ("fcopysign.s %0, %1, %2" : "=f" (x) : "f" (x), "f" (y));
++  return x;
++}
++libm_alias_float (__copysign, copysign)
+-- 
+2.20.1
+

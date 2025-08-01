@@ -1,0 +1,29 @@
+From 39811a665bbb954b9b76b5c9dcbe58ca6011043f Mon Sep 17 00:00:00 2001
+From: Xing Li <lixing@loongson.cn>
+Date: Thu, 1 Dec 2022 11:23:21 +0800
+Subject: [PATCH 04/44] elf: Change EM_NUM after add loongarch support
+
+Signed-off-by: Xing Li <lixing@loongson.cn>
+Change-Id: I3da81e960dce5094b041675d492af075d8762778
+
+Change-Id: Icf76ca3dc55747109e668db2f646c1e27f8a2132
+---
+ elf/elf.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/elf/elf.h b/elf/elf.h
+index 7c5f4b1f07..756c0454dc 100644
+--- a/elf/elf.h
++++ b/elf/elf.h
+@@ -362,7 +362,7 @@ typedef struct
+ #define EM_BPF		247	/* Linux BPF -- in-kernel virtual machine */
+ #define	EM_LOONGARCH	258	/* Loongson Loongarch */
+ 
+-#define EM_NUM		248
++#define EM_NUM		259
+ 
+ /* Old spellings/synonyms.  */
+ 
+-- 
+2.20.1
+

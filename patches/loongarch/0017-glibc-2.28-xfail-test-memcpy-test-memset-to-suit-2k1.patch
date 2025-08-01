@@ -1,0 +1,33 @@
+From 6e356f87df192a1d2d5ac602355b48a41cd95959 Mon Sep 17 00:00:00 2001
+From: caiyinyu <caiyinyu@loongson.cn>
+Date: Fri, 10 Feb 2023 11:07:25 +0800
+Subject: [PATCH 17/44] glibc-2.28: xfail test-memcpy test-memset to suit
+ 2k1000la.
+
+test-memcpy and test-memset will test all memset and memcpy impls on
+all LoongArch platforms. On 2k1000la, it causes illegal insts error
+because of 256-bits insts of __memset_lasx and __memcpy_lasx,
+So, xfailed these two tests.
+
+Change-Id: I12a4b4a5452ae7a09b3b4a7bd0ca036a7ba4566d
+---
+ string/Makefile | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/string/Makefile b/string/Makefile
+index aa2da9ca72..d7ae7439f6 100644
+--- a/string/Makefile
++++ b/string/Makefile
+@@ -64,6 +64,9 @@ tests		:= tester inl-tester noinl-tester testcopy test-ffs	\
+ # This test allocates a lot of memory and can run for a long time.
+ xtests = tst-strcoll-overflow
+ 
++test-xfail-test-memcpy = yes
++test-xfail-test-memset = yes
++
+ # This test needs libdl.
+ ifeq (yes,$(build-shared))
+ tests += test-strerror-errno
+-- 
+2.20.1
+

@@ -1,0 +1,305 @@
+From 9a78b1750878645c58e7f6f8a083610d33849512 Mon Sep 17 00:00:00 2001
+From: caiyinyu <caiyinyu@loongson.cn>
+Date: Tue, 11 Jul 2023 16:09:55 +0800
+Subject: [PATCH 03/11] glibc-2.28: Refactor code and fix bug in
+ _dl_runtime_resolve.
+
+Change-Id: I4907e6643ef25b87d7862e957ce9bf6d201da816
+---
+ sysdeps/loongarch/dl-machine.h    |   8 +-
+ sysdeps/loongarch/dl-trampoline.S |   7 ++
+ sysdeps/loongarch/dl-trampoline.h | 159 +++++++++++++-----------------
+ sysdeps/loongarch/sys/asm.h       |   9 ++
+ 4 files changed, 90 insertions(+), 93 deletions(-)
+
+diff --git a/sysdeps/loongarch/dl-machine.h b/sysdeps/loongarch/dl-machine.h
+index dce85d1a8d..b0813f0747 100644
+--- a/sysdeps/loongarch/dl-machine.h
++++ b/sysdeps/loongarch/dl-machine.h
+@@ -376,9 +376,13 @@ elf_machine_runtime_setup (struct link_map *l, int lazy, int profile)
+   /* If using PLTs, fill in the first two entries of .got.plt.  */
+   if (l->l_info[DT_JMPREL])
+     {
+-      extern void _dl_runtime_resolve (void) __attribute__ ((visibility ("hidden")));
++
++#if HAVE_LOONGARCH_VEC_ASM && !defined __loongarch_soft_float
+       extern void _dl_runtime_resolve_lasx (void) __attribute__ ((visibility ("hidden")));
+       extern void _dl_runtime_resolve_lsx (void) __attribute__ ((visibility ("hidden")));
++#endif
++      extern void _dl_runtime_resolve (void) __attribute__ ((visibility ("hidden")));
++
+       ElfW(Addr) *gotplt = (ElfW(Addr) *) D_PTR (l, l_info[DT_PLTGOT]);
+       /* If a library is prelinked but we have to relocate anyway,
+ 	 we have to be able to undo the prelinking of .got.plt.
+@@ -386,11 +390,13 @@ elf_machine_runtime_setup (struct link_map *l, int lazy, int profile)
+       if (gotplt[1])
+ 	l->l_mach.plt = gotplt[1] + l->l_addr;
+ 
++#if HAVE_LOONGARCH_VEC_ASM && !defined __loongarch_soft_float
+       if (SUPPORT_LASX)
+ 	gotplt[0] = (ElfW(Addr)) &_dl_runtime_resolve_lasx;
+       else if (SUPPORT_LSX)
+ 	gotplt[0] = (ElfW(Addr)) &_dl_runtime_resolve_lsx;
+       else
++#endif
+ 	gotplt[0] = (ElfW(Addr)) &_dl_runtime_resolve;
+ 
+       gotplt[1] = (ElfW(Addr)) l;
+diff --git a/sysdeps/loongarch/dl-trampoline.S b/sysdeps/loongarch/dl-trampoline.S
+index 5f627a6313..78d741f3ad 100644
+--- a/sysdeps/loongarch/dl-trampoline.S
++++ b/sysdeps/loongarch/dl-trampoline.S
+@@ -16,16 +16,23 @@
+    License along with the GNU C Library.  If not, see
+    <http://www.gnu.org/licenses/>.  */
+ 
++#include <sysdep.h>
++#include <sys/asm.h>
++
++#if HAVE_LOONGARCH_VEC_ASM && !defined __loongarch_soft_float
+ #define USE_LASX
+ #define _dl_runtime_resolve _dl_runtime_resolve_lasx
+ #include "dl-trampoline.h"
++#undef FRAME_SIZE
+ #undef USE_LASX
+ #undef _dl_runtime_resolve
+ 
+ #define USE_LSX
+ #define _dl_runtime_resolve _dl_runtime_resolve_lsx
+ #include "dl-trampoline.h"
++#undef FRAME_SIZE
+ #undef USE_LSX
+ #undef _dl_runtime_resolve
++#endif
+ 
+ #include "dl-trampoline.h"
+diff --git a/sysdeps/loongarch/dl-trampoline.h b/sysdeps/loongarch/dl-trampoline.h
+index 96f41f1d14..9a6d9b6cfe 100644
+--- a/sysdeps/loongarch/dl-trampoline.h
++++ b/sysdeps/loongarch/dl-trampoline.h
+@@ -17,31 +17,24 @@
+    License along with the GNU C Library.  If not, see
+    <http://www.gnu.org/licenses/>.  */
+ 
+-#include <sysdep.h>
+-#include <sys/asm.h>
+-
+ /* Assembler veneer called from the PLT header code for lazy loading.
+    The PLT header passes its own args in t0-t2.  */
+-
+-#ifdef __loongarch_soft_float
+-# define FRAME_SIZE (-((-10 * SZREG) & ALMASK))
++#ifdef USE_LASX
++# define FRAME_SIZE (-((-9 * SZREG - 8 * SZFREG - 8 * SZXREG) & ALMASK))
++#elif defined USE_LSX
++# define FRAME_SIZE (-((-9 * SZREG - 8 * SZFREG - 8 * SZVREG) & ALMASK))
++#elif !defined __loongarch_soft_float
++# define FRAME_SIZE (-((-9 * SZREG - 8 * SZFREG) & ALMASK))
+ #else
+-# define FRAME_SIZE (-((-10 * SZREG - 8 * 256) & ALMASK))
++# define FRAME_SIZE (-((-9 * SZREG) & ALMASK))
+ #endif
+ 
+ ENTRY (_dl_runtime_resolve, 3)
+-  # Save arguments to stack.
+-
+-#ifdef __loongarch64
+-	li.d    t3, -FRAME_SIZE
+-	add.d	sp, sp, t3
+-#elif defined __loongarch32
+-	li.w    t3, -FRAME_SIZE
+-	add.w	sp, sp, t3
+-#endif
+ 
++	/* Save arguments to stack. */
++	ADDI	sp, sp, -FRAME_SIZE
+ 
+-	REG_S	ra, sp, 9*SZREG
++	REG_S	ra, sp, 0*SZREG
+ 	REG_S	a0, sp, 1*SZREG
+ 	REG_S	a1, sp, 2*SZREG
+ 	REG_S	a2, sp, 3*SZREG
+@@ -51,55 +44,45 @@ ENTRY (_dl_runtime_resolve, 3)
+ 	REG_S	a6, sp, 7*SZREG
+ 	REG_S	a7, sp, 8*SZREG
+ 
+-#ifndef __loongarch_soft_float
+-	FREG_S	fa0, sp, 10*SZREG + 0*SZFREG
+-	FREG_S	fa1, sp, 10*SZREG + 1*SZFREG
+-	FREG_S	fa2, sp, 10*SZREG + 2*SZFREG
+-	FREG_S	fa3, sp, 10*SZREG + 3*SZFREG
+-	FREG_S	fa4, sp, 10*SZREG + 4*SZFREG
+-	FREG_S	fa5, sp, 10*SZREG + 5*SZFREG
+-	FREG_S	fa6, sp, 10*SZREG + 6*SZFREG
+-	FREG_S	fa7, sp, 10*SZREG + 7*SZFREG
+ #ifdef USE_LASX
+-	xvst	xr0, sp, 10*SZREG + 0*256
+-	xvst	xr1, sp, 10*SZREG + 1*256
+-	xvst	xr2, sp, 10*SZREG + 2*256
+-	xvst	xr3, sp, 10*SZREG + 3*256
+-	xvst	xr4, sp, 10*SZREG + 4*256
+-	xvst	xr5, sp, 10*SZREG + 5*256
+-	xvst	xr6, sp, 10*SZREG + 6*256
+-	xvst	xr7, sp, 10*SZREG + 7*256
++	xvst	xr0, sp, 9*SZREG + 8*SZFREG + 0*SZXREG
++	xvst	xr1, sp, 9*SZREG + 8*SZFREG + 1*SZXREG
++	xvst	xr2, sp, 9*SZREG + 8*SZFREG + 2*SZXREG
++	xvst	xr3, sp, 9*SZREG + 8*SZFREG + 3*SZXREG
++	xvst	xr4, sp, 9*SZREG + 8*SZFREG + 4*SZXREG
++	xvst	xr5, sp, 9*SZREG + 8*SZFREG + 5*SZXREG
++	xvst	xr6, sp, 9*SZREG + 8*SZFREG + 6*SZXREG
++	xvst	xr7, sp, 9*SZREG + 8*SZFREG + 7*SZXREG
+ #elif defined USE_LSX
+-	vst	vr0, sp, 10*SZREG + 0*128
+-	vst	vr1, sp, 10*SZREG + 1*128
+-	vst	vr2, sp, 10*SZREG + 2*128
+-	vst	vr3, sp, 10*SZREG + 3*128
+-	vst	vr4, sp, 10*SZREG + 4*128
+-	vst	vr5, sp, 10*SZREG + 5*128
+-	vst	vr6, sp, 10*SZREG + 6*128
+-	vst	vr7, sp, 10*SZREG + 7*128
+-#endif
++	vst	vr0, sp, 9*SZREG + 8*SZFREG + 0*SZVREG
++	vst	vr1, sp, 9*SZREG + 8*SZFREG + 1*SZVREG
++	vst	vr2, sp, 9*SZREG + 8*SZFREG + 2*SZVREG
++	vst	vr3, sp, 9*SZREG + 8*SZFREG + 3*SZVREG
++	vst	vr4, sp, 9*SZREG + 8*SZFREG + 4*SZVREG
++	vst	vr5, sp, 9*SZREG + 8*SZFREG + 5*SZVREG
++	vst	vr6, sp, 9*SZREG + 8*SZFREG + 6*SZVREG
++	vst	vr7, sp, 9*SZREG + 8*SZFREG + 7*SZVREG
++#elif !defined __loongarch_soft_float
++	FREG_S	fa0, sp, 9*SZREG + 0*SZFREG
++	FREG_S	fa1, sp, 9*SZREG + 1*SZFREG
++	FREG_S	fa2, sp, 9*SZREG + 2*SZFREG
++	FREG_S	fa3, sp, 9*SZREG + 3*SZFREG
++	FREG_S	fa4, sp, 9*SZREG + 4*SZFREG
++	FREG_S	fa5, sp, 9*SZREG + 5*SZFREG
++	FREG_S	fa6, sp, 9*SZREG + 6*SZFREG
++	FREG_S	fa7, sp, 9*SZREG + 7*SZFREG
+ #endif
+ 
+-  # Update .got.plt and obtain runtime address of callee.
+-#ifdef __loongarch64
+-	slli.d	a1, t1, 1
++	/* Update .got.plt and obtain runtime address of callee */
++	SLLI	a1, t1, 1
+ 	or	a0, t0, zero
+-	add.d	a1, a1, t1
++	ADD	a1, a1, t1
+ 	la	a2, _dl_fixup
+ 	jirl	ra, a2, 0
+ 	or	t1, v0, zero
+-#elif defined __loongarch32
+-	slli.w	a1, t1, 1
+-	or	a0, t0, zero
+-	add.w	a1, a1, t1
+-	la	a2, _dl_fixup
+-	jirl	ra, a2, 0
+-	or	t1, v0, zero
+-#endif
+ 
+-  # Restore arguments from stack.
+-	REG_L	ra, sp, 9*SZREG
++	/* Restore arguments from stack. */
++	REG_L	ra, sp, 0*SZREG
+ 	REG_L	a0, sp, 1*SZREG
+ 	REG_L	a1, sp, 2*SZREG
+ 	REG_L	a2, sp, 3*SZREG
+@@ -109,45 +92,37 @@ ENTRY (_dl_runtime_resolve, 3)
+ 	REG_L	a6, sp, 7*SZREG
+ 	REG_L	a7, sp, 8*SZREG
+ 
+-#ifndef __loongarch_soft_float
+-	FREG_L	fa0, sp, 10*SZREG + 0*SZFREG
+-	FREG_L	fa1, sp, 10*SZREG + 1*SZFREG
+-	FREG_L	fa2, sp, 10*SZREG + 2*SZFREG
+-	FREG_L	fa3, sp, 10*SZREG + 3*SZFREG
+-	FREG_L	fa4, sp, 10*SZREG + 4*SZFREG
+-	FREG_L	fa5, sp, 10*SZREG + 5*SZFREG
+-	FREG_L	fa6, sp, 10*SZREG + 6*SZFREG
+-	FREG_L	fa7, sp, 10*SZREG + 7*SZFREG
+ #ifdef USE_LASX
+-	xvld	xr0, sp, 10*SZREG + 0*256
+-	xvld	xr1, sp, 10*SZREG + 1*256
+-	xvld	xr2, sp, 10*SZREG + 2*256
+-	xvld	xr3, sp, 10*SZREG + 3*256
+-	xvld	xr4, sp, 10*SZREG + 4*256
+-	xvld	xr5, sp, 10*SZREG + 5*256
+-	xvld	xr6, sp, 10*SZREG + 6*256
+-	xvld	xr7, sp, 10*SZREG + 7*256
++	xvld	xr0, sp, 9*SZREG + 8*SZFREG + 0*SZXREG
++	xvld	xr1, sp, 9*SZREG + 8*SZFREG + 1*SZXREG
++	xvld	xr2, sp, 9*SZREG + 8*SZFREG + 2*SZXREG
++	xvld	xr3, sp, 9*SZREG + 8*SZFREG + 3*SZXREG
++	xvld	xr4, sp, 9*SZREG + 8*SZFREG + 4*SZXREG
++	xvld	xr5, sp, 9*SZREG + 8*SZFREG + 5*SZXREG
++	xvld	xr6, sp, 9*SZREG + 8*SZFREG + 6*SZXREG
++	xvld	xr7, sp, 9*SZREG + 8*SZFREG + 7*SZXREG
+ #elif defined USE_LSX
+-	vld	vr0, sp, 10*SZREG + 0*128
+-	vld	vr1, sp, 10*SZREG + 1*128
+-	vld	vr2, sp, 10*SZREG + 2*128
+-	vld	vr3, sp, 10*SZREG + 3*128
+-	vld	vr4, sp, 10*SZREG + 4*128
+-	vld	vr5, sp, 10*SZREG + 5*128
+-	vld	vr6, sp, 10*SZREG + 6*128
+-	vld	vr7, sp, 10*SZREG + 7*128
+-#endif
+-#endif
+-
+-#ifdef __loongarch64
+-	li.d    t3, FRAME_SIZE
+-	add.d	sp, sp, t3
+-#elif defined __loongarch32
+-	li.w    t3, FRAME_SIZE
+-	addi.w	sp, sp, FRAME_SIZE
++	vld	vr0, sp, 9*SZREG + 8*SZFREG + 0*SZVREG
++	vld	vr1, sp, 9*SZREG + 8*SZFREG + 1*SZVREG
++	vld	vr2, sp, 9*SZREG + 8*SZFREG + 2*SZVREG
++	vld	vr3, sp, 9*SZREG + 8*SZFREG + 3*SZVREG
++	vld	vr4, sp, 9*SZREG + 8*SZFREG + 4*SZVREG
++	vld	vr5, sp, 9*SZREG + 8*SZFREG + 5*SZVREG
++	vld	vr6, sp, 9*SZREG + 8*SZFREG + 6*SZVREG
++	vld	vr7, sp, 9*SZREG + 8*SZFREG + 7*SZVREG
++#elif !defined __loongarch_soft_float
++	FREG_L	fa0, sp, 9*SZREG + 0*SZFREG
++	FREG_L	fa1, sp, 9*SZREG + 1*SZFREG
++	FREG_L	fa2, sp, 9*SZREG + 2*SZFREG
++	FREG_L	fa3, sp, 9*SZREG + 3*SZFREG
++	FREG_L	fa4, sp, 9*SZREG + 4*SZFREG
++	FREG_L	fa5, sp, 9*SZREG + 5*SZFREG
++	FREG_L	fa6, sp, 9*SZREG + 6*SZFREG
++	FREG_L	fa7, sp, 9*SZREG + 7*SZFREG
+ #endif
+ 
++	ADDI	sp, sp, FRAME_SIZE
+ 
+-  # Invoke the callee.
++	/* Invoke the callee. */
+ 	jirl	zero, t1, 0
+ END (_dl_runtime_resolve)
+diff --git a/sysdeps/loongarch/sys/asm.h b/sysdeps/loongarch/sys/asm.h
+index 734e45aed9..e80c62454a 100644
+--- a/sysdeps/loongarch/sys/asm.h
++++ b/sysdeps/loongarch/sys/asm.h
+@@ -9,8 +9,17 @@
+ # define PTRLOG 3
+ # define SZREG	8
+ # define SZFREG	8
++# define SZVREG 16
++# define SZXREG 32
+ # define REG_L ld.d
+ # define REG_S st.d
++# define SRLI srli.d
++# define SLLI slli.d
++# define ADDI addi.d
++# define ADD  add.d
++# define SUB  sub.d
++# define BSTRINS  bstrins.d
++# define LI  li.d
+ # define FREG_L fld.d
+ # define FREG_S fst.d
+ #elif defined __loongarch32
+-- 
+2.40.1
+

@@ -1,0 +1,1032 @@
+From 7f1f019157e1d9bb731abf497e81269e0cb3d9e5 Mon Sep 17 00:00:00 2001
+From: caiyinyu <caiyinyu@loongson.cn>
+Date: Mon, 17 Apr 2023 17:04:57 +0800
+Subject: [PATCH 2/9] glibc-2.28: use new macro LEAF and ENTRY and modify
+ related code.
+
+Change-Id: Iac8a3cc0f57ba39cf364580966c8bfca1b54a7a5
+---
+ sysdeps/loongarch/__longjmp.S                          | 2 +-
+ sysdeps/loongarch/dl-trampoline.h                      | 2 +-
+ sysdeps/loongarch/lp64/memchr.S                        | 3 +--
+ sysdeps/loongarch/lp64/memcmp.S                        | 3 +--
+ sysdeps/loongarch/lp64/memcpy.S                        | 5 ++---
+ sysdeps/loongarch/lp64/memset.S                        | 3 +--
+ sysdeps/loongarch/lp64/multiarch/memchr-lasx.S         | 3 +--
+ sysdeps/loongarch/lp64/multiarch/memchr-lsx.S          | 3 +--
+ sysdeps/loongarch/lp64/multiarch/memcmp-lasx.S         | 3 +--
+ sysdeps/loongarch/lp64/multiarch/memcmp-lsx.S          | 7 +++----
+ sysdeps/loongarch/lp64/multiarch/memcpy-unaligned.S    | 2 +-
+ sysdeps/loongarch/lp64/multiarch/memmove-lasx.S        | 6 ++----
+ sysdeps/loongarch/lp64/multiarch/memmove-lsx.S         | 5 ++---
+ sysdeps/loongarch/lp64/multiarch/memmove-unaligned.S   | 2 +-
+ sysdeps/loongarch/lp64/multiarch/memrchr-lasx.S        | 3 +--
+ sysdeps/loongarch/lp64/multiarch/memrchr-lsx.S         | 3 +--
+ sysdeps/loongarch/lp64/multiarch/memset-lasx.S         | 3 +--
+ sysdeps/loongarch/lp64/multiarch/memset-lsx.S          | 3 +--
+ sysdeps/loongarch/lp64/multiarch/memset-unaligned.S    | 3 +--
+ sysdeps/loongarch/lp64/multiarch/rawmemchr-lasx.S      | 3 +--
+ sysdeps/loongarch/lp64/multiarch/rawmemchr-lsx.S       | 3 +--
+ sysdeps/loongarch/lp64/multiarch/stpcpy-lsx.S          | 6 +++---
+ sysdeps/loongarch/lp64/multiarch/strchr-lasx.S         | 3 +--
+ sysdeps/loongarch/lp64/multiarch/strchr-lsx.S          | 3 +--
+ sysdeps/loongarch/lp64/multiarch/strchr-unaligned.S    | 3 +--
+ sysdeps/loongarch/lp64/multiarch/strchrnul-unaligned.S | 3 +--
+ sysdeps/loongarch/lp64/multiarch/strcmp-lsx.S          | 6 +++---
+ sysdeps/loongarch/lp64/multiarch/strcmp-unaligned.S    | 3 +--
+ sysdeps/loongarch/lp64/multiarch/strcpy-lsx.S          | 7 ++++---
+ sysdeps/loongarch/lp64/multiarch/strcpy-unaligned.S    | 3 +--
+ sysdeps/loongarch/lp64/multiarch/strlen-lasx.S         | 3 +--
+ sysdeps/loongarch/lp64/multiarch/strlen-lsx.S          | 3 +--
+ sysdeps/loongarch/lp64/multiarch/strlen-unaligned.S    | 3 +--
+ sysdeps/loongarch/lp64/multiarch/strncmp-lsx.S         | 7 ++++---
+ sysdeps/loongarch/lp64/multiarch/strncmp-unaligned.S   | 3 +--
+ sysdeps/loongarch/lp64/multiarch/strnlen-lasx.S        | 3 +--
+ sysdeps/loongarch/lp64/multiarch/strnlen-lsx.S         | 3 +--
+ sysdeps/loongarch/lp64/multiarch/strnlen-unaligned.S   | 3 +--
+ sysdeps/loongarch/lp64/multiarch/strrchr-lasx.S        | 3 +--
+ sysdeps/loongarch/lp64/multiarch/strrchr-lsx.S         | 3 +--
+ sysdeps/loongarch/lp64/rawmemchr.S                     | 3 +--
+ sysdeps/loongarch/lp64/s_cosf.S                        | 4 +---
+ sysdeps/loongarch/lp64/s_sinf.S                        | 4 +---
+ sysdeps/loongarch/lp64/stpcpy.S                        | 3 +--
+ sysdeps/loongarch/lp64/strchr.S                        | 3 +--
+ sysdeps/loongarch/lp64/strchrnul.S                     | 3 +--
+ sysdeps/loongarch/lp64/strcmp.S                        | 3 +--
+ sysdeps/loongarch/lp64/strcpy.S                        | 3 +--
+ sysdeps/loongarch/lp64/strlen.S                        | 3 +--
+ sysdeps/loongarch/lp64/strncmp.S                       | 3 +--
+ sysdeps/loongarch/lp64/strnlen.S                       | 3 +--
+ sysdeps/loongarch/lp64/strrchr.S                       | 3 +--
+ sysdeps/loongarch/setjmp.S                             | 6 +++---
+ sysdeps/loongarch/start.S                              | 2 +-
+ sysdeps/loongarch/sys/asm.h                            | 6 +++---
+ sysdeps/unix/sysv/linux/loongarch/clone.S              | 4 ++--
+ sysdeps/unix/sysv/linux/loongarch/getcontext.S         | 2 +-
+ sysdeps/unix/sysv/linux/loongarch/setcontext.S         | 4 ++--
+ sysdeps/unix/sysv/linux/loongarch/swapcontext.S        | 2 +-
+ sysdeps/unix/sysv/linux/loongarch/sysdep.S             | 4 ++--
+ sysdeps/unix/sysv/linux/loongarch/sysdep.h             | 4 ++--
+ sysdeps/unix/sysv/linux/loongarch/vfork.S              | 2 +-
+ 62 files changed, 85 insertions(+), 130 deletions(-)
+
+diff --git a/sysdeps/loongarch/__longjmp.S b/sysdeps/loongarch/__longjmp.S
+index 68f6763954..bd06b91968 100644
+--- a/sysdeps/loongarch/__longjmp.S
++++ b/sysdeps/loongarch/__longjmp.S
+@@ -19,7 +19,7 @@
+ #include <sysdep.h>
+ #include <sys/asm.h>
+ 
+-ENTRY (__longjmp)
++ENTRY (__longjmp, 3)
+   REG_L ra, a0, 0*SZREG
+   REG_L sp, a0, 1*SZREG
+   REG_L x, a0,  2*SZREG
+diff --git a/sysdeps/loongarch/dl-trampoline.h b/sysdeps/loongarch/dl-trampoline.h
+index 9563911160..fb15983f3d 100644
+--- a/sysdeps/loongarch/dl-trampoline.h
++++ b/sysdeps/loongarch/dl-trampoline.h
+@@ -29,7 +29,7 @@
+ # define FRAME_SIZE (-((-10 * SZREG - 8 * 256) & ALMASK))
+ #endif
+ 
+-ENTRY (_dl_runtime_resolve)
++ENTRY (_dl_runtime_resolve, 3)
+   # Save arguments to stack.
+ 
+ #ifdef __loongarch64
+diff --git a/sysdeps/loongarch/lp64/memchr.S b/sysdeps/loongarch/lp64/memchr.S
+index 75c4e15cbd..23f1fd1325 100644
+--- a/sysdeps/loongarch/lp64/memchr.S
++++ b/sysdeps/loongarch/lp64/memchr.S
+@@ -11,8 +11,7 @@
+ #define MEMCHR_NAME memchr
+ #endif
+ 
+-LEAF(MEMCHR_NAME)
+-    .align      6
++LEAF(MEMCHR_NAME, 6)
+     beqz        a2, L(out)
+     andi        t1, a0, 0x7
+     lu12i.w     a3, 0x01010
+diff --git a/sysdeps/loongarch/lp64/memcmp.S b/sysdeps/loongarch/lp64/memcmp.S
+index 9e57a92479..457a4dc7ab 100644
+--- a/sysdeps/loongarch/lp64/memcmp.S
++++ b/sysdeps/loongarch/lp64/memcmp.S
+@@ -11,8 +11,7 @@
+ #define MEMCMP_NAME memcmp
+ #endif
+ 
+-LEAF(MEMCMP_NAME)
+-    .align      6
++LEAF(MEMCMP_NAME, 6)
+     beqz        a2, L(ret)
+     andi        a4, a1, 0x7
+     andi        a3, a0, 0x7
+diff --git a/sysdeps/loongarch/lp64/memcpy.S b/sysdeps/loongarch/lp64/memcpy.S
+index b6ca60a192..4791e1a420 100644
+--- a/sysdeps/loongarch/lp64/memcpy.S
++++ b/sysdeps/loongarch/lp64/memcpy.S
+@@ -35,8 +35,7 @@
+     st.d        t6, reg, n+48; \
+     st.d        t7, reg, n+56;
+ 
+-LEAF(MEMMOVE_NAME)
+-    .align      6
++LEAF(MEMMOVE_NAME, 6)
+     sub.d       t0, a0, a1
+     bltu        t0, a2, L(copy_back)
+ 
+@@ -46,7 +45,7 @@ END(MEMMOVE_NAME)
+ libc_hidden_builtin_def (MEMMOVE_NAME)
+ #endif
+ 
+-LEAF(MEMCPY_NAME)
++LEAF_NO_ALIGN(MEMCPY_NAME)
+ 
+     srai.d      a3, a2, 4
+     beqz        a3, L(short_data)  # less than 16 bytes
+diff --git a/sysdeps/loongarch/lp64/memset.S b/sysdeps/loongarch/lp64/memset.S
+index 41629e7e04..eabd7d2316 100644
+--- a/sysdeps/loongarch/lp64/memset.S
++++ b/sysdeps/loongarch/lp64/memset.S
+@@ -21,8 +21,7 @@
+     st.d        a1, a0, n+48;   \
+     st.d        a1, a0, n+56;
+ 
+-LEAF(MEMSET_NAME)
+-    .align          6
++LEAF(MEMSET_NAME, 6)
+     move        t0, a0
+     andi        a3, a0, 0x7
+     li.w        t6, 16
+diff --git a/sysdeps/loongarch/lp64/multiarch/memchr-lasx.S b/sysdeps/loongarch/lp64/multiarch/memchr-lasx.S
+index e63e34aec5..387a35feda 100644
+--- a/sysdeps/loongarch/lp64/multiarch/memchr-lasx.S
++++ b/sysdeps/loongarch/lp64/multiarch/memchr-lasx.S
+@@ -11,8 +11,7 @@
+ 
+ #define MEMCHR	__memchr_lasx
+ 
+-LEAF(MEMCHR)
+-    .align          6
++LEAF(MEMCHR, 6)
+     beqz            a2, L(ret0)
+     add.d           a3, a0, a2
+     andi            t0, a0, 0x3f
+diff --git a/sysdeps/loongarch/lp64/multiarch/memchr-lsx.S b/sysdeps/loongarch/lp64/multiarch/memchr-lsx.S
+index 441db534f8..c695265746 100644
+--- a/sysdeps/loongarch/lp64/multiarch/memchr-lsx.S
++++ b/sysdeps/loongarch/lp64/multiarch/memchr-lsx.S
+@@ -11,8 +11,7 @@
+ 
+ #define MEMCHR	__memchr_lsx
+ 
+-LEAF(MEMCHR)
+-    .align          6
++LEAF(MEMCHR, 6)
+     beqz            a2, L(ret0)
+     add.d           a3, a0, a2
+     andi            t0, a0, 0x1f
+diff --git a/sysdeps/loongarch/lp64/multiarch/memcmp-lasx.S b/sysdeps/loongarch/lp64/multiarch/memcmp-lasx.S
+index 30e2dbe6f2..9151d38d77 100644
+--- a/sysdeps/loongarch/lp64/multiarch/memcmp-lasx.S
++++ b/sysdeps/loongarch/lp64/multiarch/memcmp-lasx.S
+@@ -11,8 +11,7 @@
+ 
+ #define MEMCMP  __memcmp_lasx
+ 
+-LEAF(MEMCMP)
+-    .align          6
++LEAF(MEMCMP, 6)
+     li.d            t2, 32
+     add.d           a3, a0, a2
+     add.d           a4, a1, a2
+diff --git a/sysdeps/loongarch/lp64/multiarch/memcmp-lsx.S b/sysdeps/loongarch/lp64/multiarch/memcmp-lsx.S
+index 7fd349b657..8535aa22d7 100644
+--- a/sysdeps/loongarch/lp64/multiarch/memcmp-lsx.S
++++ b/sysdeps/loongarch/lp64/multiarch/memcmp-lsx.S
+@@ -10,11 +10,10 @@
+ #if IS_IN (libc)
+ 
+ #define MEMCMP  __memcmp_lsx
+-
+ L(magic_num):
+-    .align          6
+-    .dword          0x0706050403020100
+-    .dword          0x0f0e0d0c0b0a0908
++    .align		6
++    .dword		0x0706050403020100
++    .dword		0x0f0e0d0c0b0a0908
+     nop
+     nop
+ ENTRY_NO_ALIGN(MEMCMP)
+diff --git a/sysdeps/loongarch/lp64/multiarch/memcpy-unaligned.S b/sysdeps/loongarch/lp64/multiarch/memcpy-unaligned.S
+index 64b6024402..96df7c4047 100644
+--- a/sysdeps/loongarch/lp64/multiarch/memcpy-unaligned.S
++++ b/sysdeps/loongarch/lp64/multiarch/memcpy-unaligned.S
+@@ -31,7 +31,7 @@
+ 	st.d    t6, reg, n+48; \
+ 	st.d    t7, reg, n+56;
+ 
+-LEAF(MEMCPY_NAME)
++LEAF(MEMCPY_NAME, 3)
+ 
+ //1st var: dst ptr: void *a1 $r4 a0
+ //2nd var: src ptr: void *a2 $r5 a1
+diff --git a/sysdeps/loongarch/lp64/multiarch/memmove-lasx.S b/sysdeps/loongarch/lp64/multiarch/memmove-lasx.S
+index 9537a35a23..e8b2c4411a 100644
+--- a/sysdeps/loongarch/lp64/multiarch/memmove-lasx.S
++++ b/sysdeps/loongarch/lp64/multiarch/memmove-lasx.S
+@@ -17,8 +17,7 @@
+ #define MEMMOVE_NAME __memmove_lasx
+ #endif
+ 
+-LEAF(MEMCPY_NAME)
+-    .align          6
++LEAF(MEMCPY_NAME, 6)
+ 
+     li.d            t0, 32
+     add.d           a3, a0, a2
+@@ -83,8 +82,7 @@ L(less_1bytes):
+     jr              ra
+ END(MEMCPY_NAME)
+ 
+-LEAF(MEMMOVE_NAME)
+-    .align          6
++LEAF(MEMMOVE_NAME, 6)
+ 
+     li.d            t0, 32
+     add.d           a3, a0, a2
+diff --git a/sysdeps/loongarch/lp64/multiarch/memmove-lsx.S b/sysdeps/loongarch/lp64/multiarch/memmove-lsx.S
+index 26babad401..90f89c7a01 100644
+--- a/sysdeps/loongarch/lp64/multiarch/memmove-lsx.S
++++ b/sysdeps/loongarch/lp64/multiarch/memmove-lsx.S
+@@ -12,8 +12,7 @@
+ #define MEMCPY_NAME __memcpy_lsx
+ #define MEMMOVE_NAME __memmove_lsx
+ 
+-LEAF(MEMCPY_NAME)
+-    .align          6
++LEAF(MEMCPY_NAME, 6)
+     li.d            t6, 16
+     add.d           a3, a0, a2
+     add.d           a4, a1, a2
+@@ -83,7 +82,7 @@ L(less_1bytes):
+     nop
+ END(MEMCPY_NAME)
+ 
+-LEAF(MEMMOVE_NAME)
++LEAF(MEMMOVE_NAME, 6)
+     li.d            t6, 16
+     add.d           a3, a0, a2
+     add.d           a4, a1, a2
+diff --git a/sysdeps/loongarch/lp64/multiarch/memmove-unaligned.S b/sysdeps/loongarch/lp64/multiarch/memmove-unaligned.S
+index 42920a1a0b..712b1c620c 100644
+--- a/sysdeps/loongarch/lp64/multiarch/memmove-unaligned.S
++++ b/sysdeps/loongarch/lp64/multiarch/memmove-unaligned.S
+@@ -100,7 +100,7 @@
+ 	LD_64(a4, -1024); \
+ 	ST_64(a3, -1024);
+ 
+-LEAF(MEMMOVE_NAME)
++LEAF(MEMMOVE_NAME, 3)
+ 
+ //1st var: dest ptr: void *str1 $r4 a0
+ //2nd var: src  ptr: void *str2 $r5 a1
+diff --git a/sysdeps/loongarch/lp64/multiarch/memrchr-lasx.S b/sysdeps/loongarch/lp64/multiarch/memrchr-lasx.S
+index 57e1035fb5..9ecd0257b8 100644
+--- a/sysdeps/loongarch/lp64/multiarch/memrchr-lasx.S
++++ b/sysdeps/loongarch/lp64/multiarch/memrchr-lasx.S
+@@ -13,8 +13,7 @@
+ #define MEMRCHR	__memrchr_lasx
+ #endif
+ 
+-LEAF(MEMRCHR)
+-    .align          6
++LEAF(MEMRCHR, 6)
+     beqz            a2, L(ret0)
+     addi.d          a2, a2, -1
+     add.d           a3, a0, a2
+diff --git a/sysdeps/loongarch/lp64/multiarch/memrchr-lsx.S b/sysdeps/loongarch/lp64/multiarch/memrchr-lsx.S
+index eac2059a9f..4bdc18d8cf 100644
+--- a/sysdeps/loongarch/lp64/multiarch/memrchr-lsx.S
++++ b/sysdeps/loongarch/lp64/multiarch/memrchr-lsx.S
+@@ -11,8 +11,7 @@
+ 
+ #define MEMRCHR	__memrchr_lsx
+ 
+-LEAF(MEMRCHR)
+-    .align          6
++LEAF(MEMRCHR, 6)
+     beqz            a2, L(ret0)
+     addi.d          a2, a2, -1
+     add.d           a3, a0, a2
+diff --git a/sysdeps/loongarch/lp64/multiarch/memset-lasx.S b/sysdeps/loongarch/lp64/multiarch/memset-lasx.S
+index 1bd2dda9f6..b53c0b7bd3 100644
+--- a/sysdeps/loongarch/lp64/multiarch/memset-lasx.S
++++ b/sysdeps/loongarch/lp64/multiarch/memset-lasx.S
+@@ -11,8 +11,7 @@
+ 
+ #define MEMSET	__memset_lasx
+ 
+-LEAF(MEMSET)
+-    .align          6
++LEAF(MEMSET, 6)
+     li.d            t1, 32
+     move            a3, a0
+     xvreplgr2vr.b   $xr0, a1
+diff --git a/sysdeps/loongarch/lp64/multiarch/memset-lsx.S b/sysdeps/loongarch/lp64/multiarch/memset-lsx.S
+index a3bbadb7b2..7ab85283b2 100644
+--- a/sysdeps/loongarch/lp64/multiarch/memset-lsx.S
++++ b/sysdeps/loongarch/lp64/multiarch/memset-lsx.S
+@@ -11,8 +11,7 @@
+ 
+ #define MEMSET	__memset_lsx
+ 
+-LEAF(MEMSET)
+-    .align          6
++LEAF(MEMSET, 6)
+     li.d            t1, 16
+     move            a3, a0
+     vreplgr2vr.b    $vr0, a1
+diff --git a/sysdeps/loongarch/lp64/multiarch/memset-unaligned.S b/sysdeps/loongarch/lp64/multiarch/memset-unaligned.S
+index 54e5154604..92b0fab55f 100644
+--- a/sysdeps/loongarch/lp64/multiarch/memset-unaligned.S
++++ b/sysdeps/loongarch/lp64/multiarch/memset-unaligned.S
+@@ -33,8 +33,7 @@
+ //2nd var: int val  $5   a1
+ //3rd var: size_t num  $6  a2
+ 
+-LEAF(MEMSET_NAME)
+-	.align	6
++LEAF(MEMSET_NAME, 6)
+ 	bstrins.d a1, a1, 15, 8
+ 	add.d	  t7, a0, a2
+ 	bstrins.d a1, a1, 31, 16
+diff --git a/sysdeps/loongarch/lp64/multiarch/rawmemchr-lasx.S b/sysdeps/loongarch/lp64/multiarch/rawmemchr-lasx.S
+index bff92969b8..1e94aa5042 100644
+--- a/sysdeps/loongarch/lp64/multiarch/rawmemchr-lasx.S
++++ b/sysdeps/loongarch/lp64/multiarch/rawmemchr-lasx.S
+@@ -5,8 +5,7 @@
+ 
+ # define RAWMEMCHR __rawmemchr_lasx
+ 
+-LEAF(RAWMEMCHR)
+-    .align          6
++LEAF(RAWMEMCHR, 6)
+     move            a2, a0
+     bstrins.d       a0, zero, 4, 0
+     xvld            $xr0, a0, 0
+diff --git a/sysdeps/loongarch/lp64/multiarch/rawmemchr-lsx.S b/sysdeps/loongarch/lp64/multiarch/rawmemchr-lsx.S
+index 11a19c1d5b..40bf0cda28 100644
+--- a/sysdeps/loongarch/lp64/multiarch/rawmemchr-lsx.S
++++ b/sysdeps/loongarch/lp64/multiarch/rawmemchr-lsx.S
+@@ -11,8 +11,7 @@
+ 
+ # define RAWMEMCHR __rawmemchr_lsx
+ 
+-LEAF(RAWMEMCHR)
+-    .align          6
++LEAF(RAWMEMCHR, 6)
+     move            a2, a0
+     bstrins.d       a0, zero, 4, 0
+     vld             $vr0, a0, 0
+diff --git a/sysdeps/loongarch/lp64/multiarch/stpcpy-lsx.S b/sysdeps/loongarch/lp64/multiarch/stpcpy-lsx.S
+index bf0eed43f7..0836f59055 100644
+--- a/sysdeps/loongarch/lp64/multiarch/stpcpy-lsx.S
++++ b/sysdeps/loongarch/lp64/multiarch/stpcpy-lsx.S
+@@ -12,9 +12,9 @@
+ #define STPCPY __stpcpy_lsx
+ 
+ L(magic_num):
+-    .align          6
+-    .dword          0x0706050403020100
+-    .dword          0x0f0e0d0c0b0a0908
++    .align		6
++    .dword		0x0706050403020100
++    .dword		0x0f0e0d0c0b0a0908
+ ENTRY_NO_ALIGN(STPCPY)
+     pcaddi          t0, -4
+     andi            a4, a1, 0xf
+diff --git a/sysdeps/loongarch/lp64/multiarch/strchr-lasx.S b/sysdeps/loongarch/lp64/multiarch/strchr-lasx.S
+index ea7eb9d2d6..3f6ad91506 100644
+--- a/sysdeps/loongarch/lp64/multiarch/strchr-lasx.S
++++ b/sysdeps/loongarch/lp64/multiarch/strchr-lasx.S
+@@ -13,8 +13,7 @@
+ #define STRCHR	__strchr_lasx
+ #endif
+ 
+-LEAF(STRCHR)
+-    .align          6
++LEAF(STRCHR, 6)
+     andi            t1, a0, 0x1f
+     bstrins.d       a0, zero, 4, 0
+     xvld            $xr0, a0, 0
+diff --git a/sysdeps/loongarch/lp64/multiarch/strchr-lsx.S b/sysdeps/loongarch/lp64/multiarch/strchr-lsx.S
+index 64ead00bae..4ad9a4ad78 100644
+--- a/sysdeps/loongarch/lp64/multiarch/strchr-lsx.S
++++ b/sysdeps/loongarch/lp64/multiarch/strchr-lsx.S
+@@ -13,8 +13,7 @@
+ #define STRCHR	__strchr_lsx
+ #endif
+ 
+-LEAF(STRCHR)
+-    .align          6
++LEAF(STRCHR, 6)
+     andi            t1, a0, 0xf
+     bstrins.d       a0, zero, 3, 0
+     vld             $vr0, a0, 0
+diff --git a/sysdeps/loongarch/lp64/multiarch/strchr-unaligned.S b/sysdeps/loongarch/lp64/multiarch/strchr-unaligned.S
+index de6c7f4f0b..365818f913 100644
+--- a/sysdeps/loongarch/lp64/multiarch/strchr-unaligned.S
++++ b/sysdeps/loongarch/lp64/multiarch/strchr-unaligned.S
+@@ -38,8 +38,7 @@
+ #define STRCHR_NAME __strchr_unaligned
+ 
+ /* char * strchr (const char *s1, int c); */
+-LEAF(STRCHR_NAME)
+-	.align		6
++LEAF(STRCHR_NAME, 6)
+ 
+ 	li.w		t4, 0x7
+ 	lu12i.w		a2, 0x01010
+diff --git a/sysdeps/loongarch/lp64/multiarch/strchrnul-unaligned.S b/sysdeps/loongarch/lp64/multiarch/strchrnul-unaligned.S
+index abc246ca2f..7b496076b7 100644
+--- a/sysdeps/loongarch/lp64/multiarch/strchrnul-unaligned.S
++++ b/sysdeps/loongarch/lp64/multiarch/strchrnul-unaligned.S
+@@ -46,8 +46,7 @@
+ 
+ /* char * strchrnul (const char *s1, int c); */
+ 
+-LEAF(STRCHRNUL_NAME)
+-	.align		6
++LEAF(STRCHRNUL_NAME, 6)
+ 	li.w		t4, 0x7
+ 	lu12i.w		a2, 0x01010
+ 	bstrins.d	a1, a1, 15, 8
+diff --git a/sysdeps/loongarch/lp64/multiarch/strcmp-lsx.S b/sysdeps/loongarch/lp64/multiarch/strcmp-lsx.S
+index 226b1d634e..c86e3ecd55 100644
+--- a/sysdeps/loongarch/lp64/multiarch/strcmp-lsx.S
++++ b/sysdeps/loongarch/lp64/multiarch/strcmp-lsx.S
+@@ -13,9 +13,9 @@
+ 
+ /* int strcmp (const char *s1, const char *s2); */
+ L(magic_num):
+-    .align          6
+-    .dword          0x0706050403020100
+-    .dword          0x0f0e0d0c0b0a0908
++    .align		6
++    .dword		0x0706050403020100
++    .dword		0x0f0e0d0c0b0a0908
+ 
+ ENTRY_NO_ALIGN(STRCMP)
+     pcaddi          t0, -4
+diff --git a/sysdeps/loongarch/lp64/multiarch/strcmp-unaligned.S b/sysdeps/loongarch/lp64/multiarch/strcmp-unaligned.S
+index e29d872f70..1e2e44ecec 100644
+--- a/sysdeps/loongarch/lp64/multiarch/strcmp-unaligned.S
++++ b/sysdeps/loongarch/lp64/multiarch/strcmp-unaligned.S
+@@ -73,8 +73,7 @@
+ 
+ /* int strcmp (const char *s1, const char *s2); */
+ 
+-LEAF(STRCMP_NAME)
+-	.align		4
++LEAF(STRCMP_NAME, 4)
+ 
+ 	xor		tmp1, src1, src2
+     	lu12i.w     	zeroones, 0x01010
+diff --git a/sysdeps/loongarch/lp64/multiarch/strcpy-lsx.S b/sysdeps/loongarch/lp64/multiarch/strcpy-lsx.S
+index 76db561ad7..dbc061adfb 100644
+--- a/sysdeps/loongarch/lp64/multiarch/strcpy-lsx.S
++++ b/sysdeps/loongarch/lp64/multiarch/strcpy-lsx.S
+@@ -14,9 +14,10 @@
+ /* int strcpy (const char *s1, const char *s2); */
+ 
+ L(magic_num):
+-    .align          6
+-    .dword          0x0706050403020100
+-    .dword          0x0f0e0d0c0b0a0908
++    .align		6
++    .dword		0x0706050403020100
++    .dword		0x0f0e0d0c0b0a0908
++
+ ENTRY_NO_ALIGN(STRCPY)
+     pcaddi          t0, -4
+     andi            a4, a1, 0xf
+diff --git a/sysdeps/loongarch/lp64/multiarch/strcpy-unaligned.S b/sysdeps/loongarch/lp64/multiarch/strcpy-unaligned.S
+index c77dc1a999..150dc802b8 100644
+--- a/sysdeps/loongarch/lp64/multiarch/strcpy-unaligned.S
++++ b/sysdeps/loongarch/lp64/multiarch/strcpy-unaligned.S
+@@ -61,8 +61,7 @@
+ 
+ /* int strcpy (const char *s1, const char *s2); */
+ 
+-LEAF(STRCPY)
+-	.align		4
++LEAF(STRCPY, 4)
+     	move        	dest_backup, dest
+     	lu12i.w     	zeroones, 0x01010
+     	lu12i.w     	sevenf, 0x7f7f7
+diff --git a/sysdeps/loongarch/lp64/multiarch/strlen-lasx.S b/sysdeps/loongarch/lp64/multiarch/strlen-lasx.S
+index cb276aa012..fd6c002dbf 100644
+--- a/sysdeps/loongarch/lp64/multiarch/strlen-lasx.S
++++ b/sysdeps/loongarch/lp64/multiarch/strlen-lasx.S
+@@ -13,8 +13,7 @@
+ 
+ /* size_t strlen(const char *s1); */
+ 
+-LEAF(STRLEN)
+-    .align          6
++LEAF(STRLEN, 6)
+     move            a1, a0
+     bstrins.d       a0, zero, 4, 0
+     li.d            t1, -1
+diff --git a/sysdeps/loongarch/lp64/multiarch/strlen-lsx.S b/sysdeps/loongarch/lp64/multiarch/strlen-lsx.S
+index 6edcac8c70..6f31150633 100644
+--- a/sysdeps/loongarch/lp64/multiarch/strlen-lsx.S
++++ b/sysdeps/loongarch/lp64/multiarch/strlen-lsx.S
+@@ -13,8 +13,7 @@
+ 
+ /* size_t strlen(const char *s1); */
+ 
+-LEAF(STRLEN)
+-    .align          6
++LEAF(STRLEN, 6)
+     move            a1, a0
+     bstrins.d       a0, zero, 4, 0
+     vld             $vr0, a0, 0
+diff --git a/sysdeps/loongarch/lp64/multiarch/strlen-unaligned.S b/sysdeps/loongarch/lp64/multiarch/strlen-unaligned.S
+index 2fe0fb34e4..837255e3a3 100644
+--- a/sysdeps/loongarch/lp64/multiarch/strlen-unaligned.S
++++ b/sysdeps/loongarch/lp64/multiarch/strlen-unaligned.S
+@@ -31,8 +31,7 @@
+ 
+ /* size_t strlen (const char *s1); */
+ 
+-LEAF(STRLEN)
+-	.align		5
++LEAF(STRLEN, 5)
+ 	nor		t4, zero, zero
+ 	lu12i.w		a2, 0x01010
+ 	andi		t5, a0, 0x7
+diff --git a/sysdeps/loongarch/lp64/multiarch/strncmp-lsx.S b/sysdeps/loongarch/lp64/multiarch/strncmp-lsx.S
+index 3399bf7775..2c6f9614a0 100644
+--- a/sysdeps/loongarch/lp64/multiarch/strncmp-lsx.S
++++ b/sysdeps/loongarch/lp64/multiarch/strncmp-lsx.S
+@@ -14,9 +14,10 @@
+ /* int strncmp (const char *s1, const char *s2); */
+ 
+ L(magic_num):
+-    .align          6
+-    .dword          0x0706050403020100
+-    .dword          0x0f0e0d0c0b0a0908
++    .align		6
++    .dword		0x0706050403020100
++    .dword		0x0f0e0d0c0b0a0908
++
+ ENTRY_NO_ALIGN(STRNCMP)
+     beqz            a2, L(ret0)
+     pcaddi          t0, -5
+diff --git a/sysdeps/loongarch/lp64/multiarch/strncmp-unaligned.S b/sysdeps/loongarch/lp64/multiarch/strncmp-unaligned.S
+index 6ec107ca05..88397528fd 100644
+--- a/sysdeps/loongarch/lp64/multiarch/strncmp-unaligned.S
++++ b/sysdeps/loongarch/lp64/multiarch/strncmp-unaligned.S
+@@ -60,8 +60,7 @@
+ 
+ /* int strncmp (const char *s1, const char *s2); */
+ 
+-LEAF(STRNCMP)
+-	.align		4
++LEAF(STRNCMP, 4)
+ 	beqz		limit, strncmp_ret0
+ 
+ 	xor		tmp1, src1, src2
+diff --git a/sysdeps/loongarch/lp64/multiarch/strnlen-lasx.S b/sysdeps/loongarch/lp64/multiarch/strnlen-lasx.S
+index 8c30f10c8c..910b52feba 100644
+--- a/sysdeps/loongarch/lp64/multiarch/strnlen-lasx.S
++++ b/sysdeps/loongarch/lp64/multiarch/strnlen-lasx.S
+@@ -13,8 +13,7 @@
+ 
+ /* size_t strnlen (const char *s1, size_t maxlen); */
+ 
+-LEAF(STRNLEN)
+-    .align          6
++LEAF(STRNLEN, 6)
+     beqz            a1, L(ret0)
+     andi            t1, a0, 0x3f
+     li.d            t3, 65
+diff --git a/sysdeps/loongarch/lp64/multiarch/strnlen-lsx.S b/sysdeps/loongarch/lp64/multiarch/strnlen-lsx.S
+index 388c239a02..db0e90ffef 100644
+--- a/sysdeps/loongarch/lp64/multiarch/strnlen-lsx.S
++++ b/sysdeps/loongarch/lp64/multiarch/strnlen-lsx.S
+@@ -13,8 +13,7 @@
+ 
+ /* size_t strnlen (const char *s1, size_t maxlen); */
+ 
+-LEAF(STRNLEN)
+-    .align          6
++LEAF(STRNLEN, 6)
+     beqz            a1, L(ret0)
+     andi            t1, a0, 0x1f
+     li.d            t3, 33
+diff --git a/sysdeps/loongarch/lp64/multiarch/strnlen-unaligned.S b/sysdeps/loongarch/lp64/multiarch/strnlen-unaligned.S
+index 4a195b7c83..78e7444d1f 100644
+--- a/sysdeps/loongarch/lp64/multiarch/strnlen-unaligned.S
++++ b/sysdeps/loongarch/lp64/multiarch/strnlen-unaligned.S
+@@ -63,9 +63,8 @@
+ 
+ /* size_t strnlen (const char *s1,size_t maxlen); */
+ 
+-LEAF(STRNLEN)
++LEAF(STRNLEN, 4)
+ 
+-    .align	4
+     beqz        limit, L(_hit_limit)
+     lu12i.w     zeroones, 0x01010
+     lu12i.w     sevenf, 0x7f7f7
+diff --git a/sysdeps/loongarch/lp64/multiarch/strrchr-lasx.S b/sysdeps/loongarch/lp64/multiarch/strrchr-lasx.S
+index 6f7a56184c..325458ff25 100644
+--- a/sysdeps/loongarch/lp64/multiarch/strrchr-lasx.S
++++ b/sysdeps/loongarch/lp64/multiarch/strrchr-lasx.S
+@@ -11,8 +11,7 @@
+ 
+ #define STRRCHR __strrchr_lasx
+ 
+-LEAF(STRRCHR)
+-    .align          6
++LEAF(STRRCHR, 6)
+     andi            t1, a0, 0x3f
+     bstrins.d       a0, zero, 5, 0
+     xvld            $xr0, a0, 0
+diff --git a/sysdeps/loongarch/lp64/multiarch/strrchr-lsx.S b/sysdeps/loongarch/lp64/multiarch/strrchr-lsx.S
+index e9228a2e63..e082eaab7b 100644
+--- a/sysdeps/loongarch/lp64/multiarch/strrchr-lsx.S
++++ b/sysdeps/loongarch/lp64/multiarch/strrchr-lsx.S
+@@ -11,8 +11,7 @@
+ 
+ #define STRRCHR __strrchr_lsx
+ 
+-LEAF(STRRCHR)
+-    .align          6
++LEAF(STRRCHR, 6)
+     andi            t1, a0, 0x1f
+     bstrins.d       a0, zero, 4, 0
+     vld             $vr0, a0, 0
+diff --git a/sysdeps/loongarch/lp64/rawmemchr.S b/sysdeps/loongarch/lp64/rawmemchr.S
+index 94b70f2d70..ef1db7ed62 100644
+--- a/sysdeps/loongarch/lp64/rawmemchr.S
++++ b/sysdeps/loongarch/lp64/rawmemchr.S
+@@ -12,8 +12,7 @@
+ #endif
+ 
+ 
+-LEAF(RAWMEMCHR_NAME)
+-    .align      6
++LEAF(RAWMEMCHR_NAME, 6)
+     andi        t1, a0, 0x7
+     bstrins.d   a0, zero, 2, 0
+     lu12i.w     a2, 0x01010
+diff --git a/sysdeps/loongarch/lp64/s_cosf.S b/sysdeps/loongarch/lp64/s_cosf.S
+index 5bfabefb0a..9fcbe6cad7 100644
+--- a/sysdeps/loongarch/lp64/s_cosf.S
++++ b/sysdeps/loongarch/lp64/s_cosf.S
+@@ -74,9 +74,7 @@
+     movgr2fr.d  tmp, rs;\
+     ffint.d.l   rd, tmp
+ 
+-LEAF(COSF)
+-    .align      2
+-    .align      3
++LEAF(COSF, 3)
+     /* fa0 is SP x; fa1 is DP x */
+     movfr2gr.s  t0, fa0 /* Bits of x */
+     fcvt.d.s    fa1, fa0 /* DP x */
+diff --git a/sysdeps/loongarch/lp64/s_sinf.S b/sysdeps/loongarch/lp64/s_sinf.S
+index 91c9db9e42..45d1c4b560 100644
+--- a/sysdeps/loongarch/lp64/s_sinf.S
++++ b/sysdeps/loongarch/lp64/s_sinf.S
+@@ -74,9 +74,7 @@
+     movgr2fr.d  tmp, rs;\
+     ffint.d.l   rd, tmp
+ 
+-LEAF(SINF)
+-    .align      2
+-    .align      3
++LEAF(SINF, 3)
+     /* fa0 is SP x; fa1 is DP x */
+     movfr2gr.s  t2, fa0 /* Bits of x */
+     fcvt.d.s    fa1, fa0 /* DP x */
+diff --git a/sysdeps/loongarch/lp64/stpcpy.S b/sysdeps/loongarch/lp64/stpcpy.S
+index 9d4b0c8d8a..b6a367dc1b 100644
+--- a/sysdeps/loongarch/lp64/stpcpy.S
++++ b/sysdeps/loongarch/lp64/stpcpy.S
+@@ -11,8 +11,7 @@
+ #define STPCPY_NAME __stpcpy
+ #endif
+ 
+-LEAF(STPCPY_NAME)
+-    .align      6
++LEAF(STPCPY_NAME, 6)
+     andi        a3, a0, 0x7
+     beqz        a3, L(dest_align)
+     sub.d       a5, a1, a3
+diff --git a/sysdeps/loongarch/lp64/strchr.S b/sysdeps/loongarch/lp64/strchr.S
+index 63454c1756..fde53a3065 100644
+--- a/sysdeps/loongarch/lp64/strchr.S
++++ b/sysdeps/loongarch/lp64/strchr.S
+@@ -13,8 +13,7 @@
+ 
+ /* char * strchr (const char *s1, int c); */
+ 
+-LEAF(STRCHR_NAME)
+-	.align		6
++LEAF(STRCHR_NAME, 6)
+ 	slli.d		t1, a0, 3
+ 	bstrins.d	a0, zero, 2, 0
+ 	lu12i.w		a2, 0x01010
+diff --git a/sysdeps/loongarch/lp64/strchrnul.S b/sysdeps/loongarch/lp64/strchrnul.S
+index c4532e112c..a5ee09a3f2 100644
+--- a/sysdeps/loongarch/lp64/strchrnul.S
++++ b/sysdeps/loongarch/lp64/strchrnul.S
+@@ -13,8 +13,7 @@
+ 
+ /* char * strchrnul (const char *s1, int c); */
+ 
+-LEAF(STRCHRNUL_NAME)
+-	.align		6
++LEAF(STRCHRNUL_NAME, 6)
+ 	slli.d		t1, a0, 3
+ 	bstrins.d	a0, zero, 2, 0
+ 	lu12i.w		a2, 0x01010
+diff --git a/sysdeps/loongarch/lp64/strcmp.S b/sysdeps/loongarch/lp64/strcmp.S
+index 22c261a371..3a86399298 100644
+--- a/sysdeps/loongarch/lp64/strcmp.S
++++ b/sysdeps/loongarch/lp64/strcmp.S
+@@ -19,8 +19,7 @@
+ #define src1	a0
+ #define	src2	a1
+ #define result	v0
+-LEAF(STRCMP_NAME)
+-    .align	6
++LEAF(STRCMP_NAME, 6)
+     xor         a4, src1, src2
+     lu12i.w     t5, 0x01010
+     lu12i.w     t6, 0x7f7f7
+diff --git a/sysdeps/loongarch/lp64/strcpy.S b/sysdeps/loongarch/lp64/strcpy.S
+index c6fe74cb7e..08505192db 100644
+--- a/sysdeps/loongarch/lp64/strcpy.S
++++ b/sysdeps/loongarch/lp64/strcpy.S
+@@ -11,8 +11,7 @@
+ #define STRCPY  strcpy
+ #endif
+ 
+-LEAF(STRCPY)
+-    .align      6
++LEAF(STRCPY, 6)
+     andi        a3, a0, 0x7
+     move        a2, a0
+     beqz        a3, L(dest_align)
+diff --git a/sysdeps/loongarch/lp64/strlen.S b/sysdeps/loongarch/lp64/strlen.S
+index dd5a8da350..71431ce2bd 100644
+--- a/sysdeps/loongarch/lp64/strlen.S
++++ b/sysdeps/loongarch/lp64/strlen.S
+@@ -11,8 +11,7 @@
+ #define STRLEN	strlen
+ #endif
+ 
+-LEAF(STRLEN)
+-	.align 6
++LEAF(STRLEN, 6)
+ 	move		a1, a0
+ 	bstrins.d	a0, zero, 2, 0
+ 	lu12i.w		a2, 0x01010
+diff --git a/sysdeps/loongarch/lp64/strncmp.S b/sysdeps/loongarch/lp64/strncmp.S
+index dcb1535096..55450e550e 100644
+--- a/sysdeps/loongarch/lp64/strncmp.S
++++ b/sysdeps/loongarch/lp64/strncmp.S
+@@ -13,8 +13,7 @@
+ 
+ /* int strncmp (const char *s1, const char *s2); */
+ 
+-LEAF(STRNCMP)
+-    .align      6
++LEAF(STRNCMP, 6)
+     beqz        a2, L(ret0)
+     xor         a4, a0, a1
+     lu12i.w     t5, 0x01010
+diff --git a/sysdeps/loongarch/lp64/strnlen.S b/sysdeps/loongarch/lp64/strnlen.S
+index 0517e206fe..5b5ab58581 100644
+--- a/sysdeps/loongarch/lp64/strnlen.S
++++ b/sysdeps/loongarch/lp64/strnlen.S
+@@ -15,8 +15,7 @@
+ #. first load with t1 != 0, need to adjust t5;
+ #. return the less one of both strlen(s) and a1;
+ 
+-LEAF(STRNLEN)
+-	.align 6
++LEAF(STRNLEN, 6)
+ 	beqz		a1, L(out)
+ 	lu12i.w		a2, 0x01010
+ 	andi		t1, a0, 0x7
+diff --git a/sysdeps/loongarch/lp64/strrchr.S b/sysdeps/loongarch/lp64/strrchr.S
+index 3bf92ecd80..df7fcb6b84 100644
+--- a/sysdeps/loongarch/lp64/strrchr.S
++++ b/sysdeps/loongarch/lp64/strrchr.S
+@@ -11,8 +11,7 @@
+ #define STRRCHR_NAME strrchr
+ #endif
+ 
+-LEAF(STRRCHR_NAME)
+-	.align 6
++LEAF(STRRCHR_NAME, 6)
+ 	slli.d		t1, a0, 3
+ 	bstrins.d	a0, zero, 2, 0
+ 	lu12i.w		a2, 0x01010
+diff --git a/sysdeps/loongarch/setjmp.S b/sysdeps/loongarch/setjmp.S
+index da09a93c2a..c4e6d01c4b 100644
+--- a/sysdeps/loongarch/setjmp.S
++++ b/sysdeps/loongarch/setjmp.S
+@@ -19,14 +19,14 @@
+ #include <sysdep.h>
+ #include <sys/asm.h>
+ 
+-ENTRY (_setjmp)
++ENTRY (_setjmp, 3)
+   li.w a1,0
+   b __sigsetjmp
+ END (_setjmp)
+-ENTRY (setjmp)
++ENTRY (setjmp, 3)
+   li.w a1,1
+ END (setjmp)
+-ENTRY (__sigsetjmp)
++ENTRY (__sigsetjmp, 3)
+   REG_S ra, a0, 0*SZREG
+   REG_S sp, a0, 1*SZREG
+   REG_S x, a0,  2*SZREG
+diff --git a/sysdeps/loongarch/start.S b/sysdeps/loongarch/start.S
+index cf0a14b55f..b83221e423 100644
+--- a/sysdeps/loongarch/start.S
++++ b/sysdeps/loongarch/start.S
+@@ -17,7 +17,7 @@ __libc_start_main (int (*main) (int, char **, char **),
+ 			    void *stack_end);
+ */
+ 
+-ENTRY (ENTRY_POINT)
++ENTRY (ENTRY_POINT, 3)
+ 	/* Terminate call stack by noting ra is undefined.  Use a dummy
+ 	   .cfi_label to force starting the FDE.  */
+ 	.cfi_label .Ldummy
+diff --git a/sysdeps/loongarch/sys/asm.h b/sysdeps/loongarch/sys/asm.h
+index f64bfb2b6c..357a5ba373 100644
+--- a/sysdeps/loongarch/sys/asm.h
++++ b/sysdeps/loongarch/sys/asm.h
+@@ -27,15 +27,15 @@
+ 
+ 
+ /* Declare leaf routine.  */
+-#define	LEAF(symbol)			\
++#define	LEAF(symbol, aln)		\
+ 	.text;				\
+ 	.globl	symbol;			\
+-	.align	3;			\
++	.align	aln;			\
+ 	.type	symbol, @function;	\
+ symbol: \
+ 	cfi_startproc;			\
+ 
+-# define ENTRY(symbol) LEAF(symbol)
++# define ENTRY(symbol, aln) LEAF(symbol, aln)
+ 
+ #define	LEAF_NO_ALIGN(symbol)			\
+ 	.text;				\
+diff --git a/sysdeps/unix/sysv/linux/loongarch/clone.S b/sysdeps/unix/sysv/linux/loongarch/clone.S
+index f0fc566e43..1180a11d52 100644
+--- a/sysdeps/unix/sysv/linux/loongarch/clone.S
++++ b/sysdeps/unix/sysv/linux/loongarch/clone.S
+@@ -29,7 +29,7 @@
+ /* int clone(int (*fn)(void *arg), void *child_stack, int flags, void *arg,
+ 	     void *parent_tidptr, void *tls, void *child_tidptr) */
+ 
+-ENTRY (__clone)
++ENTRY (__clone, 3)
+ 
+ 	/* Align stack to 16 or 8 bytes per the ABI.  */
+ #if _LOONGARCH_SIM == _ABILP64
+@@ -74,7 +74,7 @@ L (error):
+    its own function so that we can terminate the stack trace with our
+    debug info.  */
+ 
+-ENTRY (__thread_start)
++ENTRY (__thread_start, 3)
+ L (thread_start):
+ 	/* Terminate call stack by noting ra is undefined.  Use a dummy
+ 	   .cfi_label to force starting the FDE.  */
+diff --git a/sysdeps/unix/sysv/linux/loongarch/getcontext.S b/sysdeps/unix/sysv/linux/loongarch/getcontext.S
+index 9c28d95800..6391850ebb 100644
+--- a/sysdeps/unix/sysv/linux/loongarch/getcontext.S
++++ b/sysdeps/unix/sysv/linux/loongarch/getcontext.S
+@@ -21,7 +21,7 @@
+ /* int getcontext (ucontext_t *ucp) */
+ 
+ 	.text
+-LEAF (__getcontext)
++LEAF (__getcontext, 3)
+ 	SAVE_INT_REG (ra,   1, a0)
+ 	SAVE_INT_REG (sp,   3, a0)
+ 	SAVE_INT_REG (zero,  4, a0)	/* return 0 by overwriting a0.  */
+diff --git a/sysdeps/unix/sysv/linux/loongarch/setcontext.S b/sysdeps/unix/sysv/linux/loongarch/setcontext.S
+index c96ec43c90..3a043a63bc 100644
+--- a/sysdeps/unix/sysv/linux/loongarch/setcontext.S
++++ b/sysdeps/unix/sysv/linux/loongarch/setcontext.S
+@@ -28,7 +28,7 @@
+   other than the PRESERVED state.  */
+ 
+ 	.text
+-LEAF (__setcontext)
++LEAF (__setcontext, 3)
+ 
+ 	addi.d	sp, sp, -16
+ 	st.d	a0, sp, 0	/* Save ucp to stack. */
+@@ -94,7 +94,7 @@ LEAF (__setcontext)
+ PSEUDO_END (__setcontext)
+ weak_alias (__setcontext, setcontext)
+ 
+-LEAF (__start_context)
++LEAF (__start_context, 3)
+ 
+ 	/* Terminate call stack by noting ra == 0.  Happily, s0 == 0 here.  */
+ 	cfi_register (1, 23)
+diff --git a/sysdeps/unix/sysv/linux/loongarch/swapcontext.S b/sysdeps/unix/sysv/linux/loongarch/swapcontext.S
+index d839dd87db..c9024d5f0a 100644
+--- a/sysdeps/unix/sysv/linux/loongarch/swapcontext.S
++++ b/sysdeps/unix/sysv/linux/loongarch/swapcontext.S
+@@ -20,7 +20,7 @@
+ 
+ /* int swapcontext (ucontext_t *oucp, const ucontext_t *ucp) */
+ 
+-LEAF (__swapcontext)
++LEAF (__swapcontext, 3)
+ 	ori 	a2, sp, 0		/* Save sp to a2. */
+ 	addi.d	sp, sp, -16
+ 	st.d	a1, sp, 0
+diff --git a/sysdeps/unix/sysv/linux/loongarch/sysdep.S b/sysdeps/unix/sysv/linux/loongarch/sysdep.S
+index a809428340..19c03fb484 100644
+--- a/sysdeps/unix/sysv/linux/loongarch/sysdep.S
++++ b/sysdeps/unix/sysv/linux/loongarch/sysdep.S
+@@ -22,13 +22,13 @@
+ # define errno __libc_errno
+ #endif
+ 
+-ENTRY (__syscall_error)
++ENTRY (__syscall_error, 3)
+ 	/* Fall through to __syscall_set_errno.  */
+ END (__syscall_error)
+ 
+ /* Non-standard calling convention: argument in a0, return address in t0,
+    and clobber only t1.  */
+-ENTRY (__syscall_set_errno)
++ENTRY (__syscall_set_errno, 3)
+ 	/* We got here because a0 < 0, but only codes in the range [-4095, -1]
+ 	  represent errors.  Otherwise, just return the result normally.  */
+ 
+diff --git a/sysdeps/unix/sysv/linux/loongarch/sysdep.h b/sysdeps/unix/sysv/linux/loongarch/sysdep.h
+index f50946d4e3..7b45f6093a 100644
+--- a/sysdeps/unix/sysv/linux/loongarch/sysdep.h
++++ b/sysdeps/unix/sysv/linux/loongarch/sysdep.h
+@@ -14,7 +14,7 @@
+    errors by setting a0 to a value between -1 and -4095.  */
+ # undef PSEUDO
+ # define PSEUDO(name, syscall_name, args)		\
+-	ENTRY (name);					\
++	ENTRY (name, 3);					\
+ 	li.d	a7, SYS_ify (syscall_name);		\
+ 	syscall	0;					\
+ 	li.d	a7, -4096;				\
+@@ -58,7 +58,7 @@
+ /* Performs a system call, not setting errno.  */
+ # undef PSEUDO_NEORRNO
+ # define PSEUDO_NOERRNO(name, syscall_name, args)	\
+-	ENTRY (name);					\
++	ENTRY (name, 3);					\
+ 	li.d	a7, SYS_ify (syscall_name);		\
+ 	syscall	0;
+ 
+diff --git a/sysdeps/unix/sysv/linux/loongarch/vfork.S b/sysdeps/unix/sysv/linux/loongarch/vfork.S
+index 83cf141fcc..5db6720a3c 100644
+--- a/sysdeps/unix/sysv/linux/loongarch/vfork.S
++++ b/sysdeps/unix/sysv/linux/loongarch/vfork.S
+@@ -25,7 +25,7 @@
+    replaced by a call to `execve'.  Return -1 for errors, 0 to the new process,
+    and the process ID of the new process to the old process.  */
+ 
+-ENTRY (__vfork)
++ENTRY (__vfork, 3)
+ 
+ 
+     li.d a0, 0x4111 /* CLONE_VM | CLONE_VFORK | SIGCHLD */
+-- 
+2.40.1
+

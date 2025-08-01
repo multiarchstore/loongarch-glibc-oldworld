@@ -1,0 +1,123 @@
+From 30e901004feddd8628bfcfa2b7ae9342167f8118 Mon Sep 17 00:00:00 2001
+From: caiyinyu <caiyinyu@loongson.cn>
+Date: Fri, 24 Feb 2023 17:03:48 +0800
+Subject: [PATCH 36/44] glibc-2.28: Delete useless #ifndef in mem*.S files.
+
+Change-Id: I7a982886fb2d90c36f85bf84c132217820d03e5a
+---
+ sysdeps/loongarch/lp64/multiarch/memcpy-aligned.S    | 5 -----
+ sysdeps/loongarch/lp64/multiarch/memcpy-lasx.S       | 3 ---
+ sysdeps/loongarch/lp64/multiarch/memcpy-unaligned.S  | 2 --
+ sysdeps/loongarch/lp64/multiarch/memmove-unaligned.S | 2 --
+ sysdeps/loongarch/lp64/multiarch/memset-aligned.S    | 2 --
+ sysdeps/loongarch/lp64/multiarch/memset-lasx.S       | 3 ---
+ sysdeps/loongarch/lp64/multiarch/memset-unaligned.S  | 2 --
+ 7 files changed, 19 deletions(-)
+
+diff --git a/sysdeps/loongarch/lp64/multiarch/memcpy-aligned.S b/sysdeps/loongarch/lp64/multiarch/memcpy-aligned.S
+index eb56e13e33..5ff8b4e603 100644
+--- a/sysdeps/loongarch/lp64/multiarch/memcpy-aligned.S
++++ b/sysdeps/loongarch/lp64/multiarch/memcpy-aligned.S
+@@ -2,13 +2,8 @@
+ 
+ #if IS_IN (libc)
+ 
+-#ifndef MEMCPY_NAME
+ #define MEMCPY_NAME __memcpy_aligned
+-#endif
+-
+-#ifndef MEMMOVE_NAME
+ #define MEMMOVE_NAME __memmove_aligned
+-#endif
+ 
+ #endif
+ 
+diff --git a/sysdeps/loongarch/lp64/multiarch/memcpy-lasx.S b/sysdeps/loongarch/lp64/multiarch/memcpy-lasx.S
+index 32c3aabb86..cb5bdfed66 100644
+--- a/sysdeps/loongarch/lp64/multiarch/memcpy-lasx.S
++++ b/sysdeps/loongarch/lp64/multiarch/memcpy-lasx.S
+@@ -27,10 +27,7 @@
+ 
+ #if IS_IN (libc)
+ 
+-/* Allow the routine to be named something else if desired.  */
+-#ifndef MEMCPY_NAME
+ #define MEMCPY_NAME __memcpy_lasx
+-#endif
+ 
+ #ifdef ANDROID_CHANGES
+ LEAF(MEMCPY_NAME, 0)
+diff --git a/sysdeps/loongarch/lp64/multiarch/memcpy-unaligned.S b/sysdeps/loongarch/lp64/multiarch/memcpy-unaligned.S
+index 69b0a0a6bf..5e38df0d30 100644
+--- a/sysdeps/loongarch/lp64/multiarch/memcpy-unaligned.S
++++ b/sysdeps/loongarch/lp64/multiarch/memcpy-unaligned.S
+@@ -9,9 +9,7 @@
+ 
+ #if IS_IN (libc)
+ 
+-#ifndef MEMCPY_NAME
+ #define MEMCPY_NAME __memcpy_unaligned
+-#endif
+ 
+ #define LD_64(reg, n) \
+ 	ld.d    t0, reg, n;    \
+diff --git a/sysdeps/loongarch/lp64/multiarch/memmove-unaligned.S b/sysdeps/loongarch/lp64/multiarch/memmove-unaligned.S
+index d6db605d5a..27ed0c9c9a 100644
+--- a/sysdeps/loongarch/lp64/multiarch/memmove-unaligned.S
++++ b/sysdeps/loongarch/lp64/multiarch/memmove-unaligned.S
+@@ -9,9 +9,7 @@
+ 
+ #if IS_IN (libc)
+ 
+-#ifndef MEMMOVE_NAME
+ #define MEMMOVE_NAME __memmove_unaligned
+-#endif
+ 
+ #define LD_64(reg, n) \
+ 	ld.d	t0, reg, n;    \
+diff --git a/sysdeps/loongarch/lp64/multiarch/memset-aligned.S b/sysdeps/loongarch/lp64/multiarch/memset-aligned.S
+index 169692c078..da2f5ada8a 100644
+--- a/sysdeps/loongarch/lp64/multiarch/memset-aligned.S
++++ b/sysdeps/loongarch/lp64/multiarch/memset-aligned.S
+@@ -1,9 +1,7 @@
+ 
+ #if IS_IN (libc)
+ 
+-#ifndef MEMSET_NAME
+ #define MEMSET_NAME __memset_aligned
+-#endif
+ 
+ #endif
+ 
+diff --git a/sysdeps/loongarch/lp64/multiarch/memset-lasx.S b/sysdeps/loongarch/lp64/multiarch/memset-lasx.S
+index 5c6522d815..79c52896f7 100644
+--- a/sysdeps/loongarch/lp64/multiarch/memset-lasx.S
++++ b/sysdeps/loongarch/lp64/multiarch/memset-lasx.S
+@@ -24,10 +24,7 @@
+ 
+ #if IS_IN (libc)
+ 
+-/* Allow the routine to be named something else if desired.  */
+-#ifndef MEMSET_NAME
+ #define MEMSET_NAME __memset_lasx
+-#endif
+ 
+ #ifdef ANDROID_CHANGES
+ LEAF(MEMSET_NAME, 0)
+diff --git a/sysdeps/loongarch/lp64/multiarch/memset-unaligned.S b/sysdeps/loongarch/lp64/multiarch/memset-unaligned.S
+index 64aa251d28..16ff2ef7f2 100644
+--- a/sysdeps/loongarch/lp64/multiarch/memset-unaligned.S
++++ b/sysdeps/loongarch/lp64/multiarch/memset-unaligned.S
+@@ -9,9 +9,7 @@
+ 
+ #if IS_IN (libc)
+ 
+-#ifndef MEMSET_NAME
+ #define MEMSET_NAME __memset_unaligned
+-#endif
+ 
+ #define ST_128(n) 	\
+ 	st.d	a1, a0, n;		 \
+-- 
+2.20.1
+

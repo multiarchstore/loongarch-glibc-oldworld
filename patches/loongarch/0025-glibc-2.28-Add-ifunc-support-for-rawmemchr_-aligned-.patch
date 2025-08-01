@@ -1,0 +1,331 @@
+From 4db4196baca73e6bf795b076997143e10c665163 Mon Sep 17 00:00:00 2001
+From: caiyinyu <caiyinyu@loongson.cn>
+Date: Thu, 16 Feb 2023 15:56:44 +0800
+Subject: [PATCH 25/44] glibc-2.28: Add ifunc support for
+ rawmemchr_{aligned,lsx}
+
+Change-Id: I274c1bd67d790da6244befb305e22ca05d40ff5a
+---
+ sysdeps/loongarch/lp64/multiarch/Makefile     |   3 +-
+ .../lp64/multiarch/ifunc-impl-list.c          |   5 +
+ .../lp64/multiarch/ifunc-rawmemchr.h          |  34 ++++++
+ .../lp64/multiarch/rawmemchr-aligned.S        |   7 ++
+ .../loongarch/lp64/multiarch/rawmemchr-lsx.S  |  56 +++++++++
+ sysdeps/loongarch/lp64/multiarch/rawmemchr.c  |  37 ++++++
+ sysdeps/loongarch/lp64/rawmemchr.S            | 114 ++++++++++++++++++
+ 7 files changed, 255 insertions(+), 1 deletion(-)
+ create mode 100644 sysdeps/loongarch/lp64/multiarch/ifunc-rawmemchr.h
+ create mode 100644 sysdeps/loongarch/lp64/multiarch/rawmemchr-aligned.S
+ create mode 100644 sysdeps/loongarch/lp64/multiarch/rawmemchr-lsx.S
+ create mode 100644 sysdeps/loongarch/lp64/multiarch/rawmemchr.c
+ create mode 100644 sysdeps/loongarch/lp64/rawmemchr.S
+
+diff --git a/sysdeps/loongarch/lp64/multiarch/Makefile b/sysdeps/loongarch/lp64/multiarch/Makefile
+index 2a799c138b..6ff946813d 100644
+--- a/sysdeps/loongarch/lp64/multiarch/Makefile
++++ b/sysdeps/loongarch/lp64/multiarch/Makefile
+@@ -4,5 +4,6 @@ sysdep_routines += memcpy-aligned memcpy-unaligned memcpy-lasx \
+ 		   memmove-unaligned memmove-lsx \
+ 		   memchr-aligned memchr-lsx \
+ 		   memrchr-generic memrchr-lsx \
+-		   memcmp-aligned memcmp-lsx
++		   memcmp-aligned memcmp-lsx \
++		   rawmemchr-aligned rawmemchr-lsx
+ endif
+diff --git a/sysdeps/loongarch/lp64/multiarch/ifunc-impl-list.c b/sysdeps/loongarch/lp64/multiarch/ifunc-impl-list.c
+index 86a7b75bb0..7f31e00f18 100644
+--- a/sysdeps/loongarch/lp64/multiarch/ifunc-impl-list.c
++++ b/sysdeps/loongarch/lp64/multiarch/ifunc-impl-list.c
+@@ -70,6 +70,11 @@ __libc_ifunc_impl_list (const char *name, struct libc_ifunc_impl *array,
+ 	      IFUNC_IMPL_ADD (array, i, memcmp, 1, __memcmp_aligned)
+ 	      )
+ 
++  IFUNC_IMPL (i, name, rawmemchr,
++	      IFUNC_IMPL_ADD (array, i, rawmemchr, 1, __rawmemchr_lsx)
++	      IFUNC_IMPL_ADD (array, i, rawmemchr, 1, __rawmemchr_aligned)
++	      )
++
+   return i;
+ }
+ 
+diff --git a/sysdeps/loongarch/lp64/multiarch/ifunc-rawmemchr.h b/sysdeps/loongarch/lp64/multiarch/ifunc-rawmemchr.h
+new file mode 100644
+index 0000000000..9093f08c8e
+--- /dev/null
++++ b/sysdeps/loongarch/lp64/multiarch/ifunc-rawmemchr.h
+@@ -0,0 +1,34 @@
++/* Common definition for memchr implementation.
++   All versions must be listed in ifunc-impl-list.c.
++   Copyright (C) 2017-2022 Free Software Foundation, Inc.
++   This file is part of the GNU C Library.
++
++   The GNU C Library is free software; you can redistribute it and/or
++   modify it under the terms of the GNU Lesser General Public
++   License as published by the Free Software Foundation; either
++   version 2.1 of the License, or (at your option) any later version.
++
++   The GNU C Library is distributed in the hope that it will be useful,
++   but WITHOUT ANY WARRANTY; without even the implied warranty of
++   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++   Lesser General Public License for more details.
++
++   You should have received a copy of the GNU Lesser General Public
++   License along with the GNU C Library; if not, see
++   <https://www.gnu.org/licenses/>.  */
++
++#include <init-arch.h>
++
++extern __typeof (REDIRECT_NAME) OPTIMIZE (lsx) attribute_hidden;
++extern __typeof (REDIRECT_NAME) OPTIMIZE (aligned) attribute_hidden;
++
++static inline void *
++IFUNC_SELECTOR (void)
++{
++  INIT_ARCH();
++
++  if (SUPPORT_LSX)
++    return OPTIMIZE (lsx);
++  else
++    return OPTIMIZE (aligned);
++}
+diff --git a/sysdeps/loongarch/lp64/multiarch/rawmemchr-aligned.S b/sysdeps/loongarch/lp64/multiarch/rawmemchr-aligned.S
+new file mode 100644
+index 0000000000..0b46b4ca6e
+--- /dev/null
++++ b/sysdeps/loongarch/lp64/multiarch/rawmemchr-aligned.S
+@@ -0,0 +1,7 @@
++
++#if IS_IN (libc)
++#define RAWMEMCHR_NAME __rawmemchr_aligned
++#endif
++
++#include "../rawmemchr.S"
++
+diff --git a/sysdeps/loongarch/lp64/multiarch/rawmemchr-lsx.S b/sysdeps/loongarch/lp64/multiarch/rawmemchr-lsx.S
+new file mode 100644
+index 0000000000..6d9cd660ad
+--- /dev/null
++++ b/sysdeps/loongarch/lp64/multiarch/rawmemchr-lsx.S
+@@ -0,0 +1,56 @@
++#ifdef _LIBC
++#include <sysdep.h>
++#include <sys/regdef.h>
++#include <sys/asm.h>
++#else
++#include <sys/asm.h>
++#include <sys/regdef.h>
++#endif
++
++#if IS_IN (libc)
++
++# define RAWMEMCHR_NAME __rawmemchr_lsx
++
++LEAF(RAWMEMCHR_NAME)
++    .align          6
++    move            a2, a0
++    bstrins.d       a0, zero, 4, 0
++    vld             $vr0, a0, 0
++    vld             $vr1, a0, 16
++
++    vreplgr2vr.b    $vr2, a1
++    vseq.b          $vr0, $vr0, $vr2
++    vseq.b          $vr1, $vr1, $vr2
++    vmsknz.b        $vr0, $vr0
++
++    vmsknz.b        $vr1, $vr1
++    vilvl.h         $vr0, $vr1, $vr0
++    movfr2gr.s      t0, $f0
++    sra.w           t0, t0, a2
++
++    beqz            t0, L(loop)
++    ctz.w           t0, t0
++    add.d           a0, a2, t0
++    jr              ra
++
++
++L(loop):
++    vld             $vr0, a0, 32
++    addi.d          a0, a0, 16
++    vseq.b          $vr0, $vr0, $vr2
++    vseteqz.v       $fcc0, $vr0
++
++    bcnez           $fcc0, L(loop)
++    addi.d          a0, a0, 16
++    vfrstpi.b       $vr0, $vr0, 0
++    vpickve2gr.bu   t0, $vr0, 0
++
++    add.d           a0, a0, t0
++    jr              ra
++END(RAWMEMCHR_NAME)
++
++#ifdef _LIBC
++libc_hidden_builtin_def (RAWMEMCHR_NAME)
++#endif
++
++#endif
+diff --git a/sysdeps/loongarch/lp64/multiarch/rawmemchr.c b/sysdeps/loongarch/lp64/multiarch/rawmemchr.c
+new file mode 100644
+index 0000000000..aae08ad53a
+--- /dev/null
++++ b/sysdeps/loongarch/lp64/multiarch/rawmemchr.c
+@@ -0,0 +1,37 @@
++/* Multiple versions of rawmemchr.
++   All versions must be listed in ifunc-impl-list.c.
++   Copyright (C) 2017-2022 Free Software Foundation, Inc.
++   This file is part of the GNU C Library.
++
++   The GNU C Library is free software; you can redistribute it and/or
++   modify it under the terms of the GNU Lesser General Public
++   License as published by the Free Software Foundation; either
++   version 2.1 of the License, or (at your option) any later version.
++
++   The GNU C Library is distributed in the hope that it will be useful,
++   but WITHOUT ANY WARRANTY; without even the implied warranty of
++   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++   Lesser General Public License for more details.
++
++   You should have received a copy of the GNU Lesser General Public
++   License along with the GNU C Library; if not, see
++   <https://www.gnu.org/licenses/>.  */
++
++#if IS_IN (libc)
++# define rawmemchr __redirect_rawmemchr
++# define __rawmemchr __redirect___rawmemchr
++# include <string.h>
++# undef rawmemchr
++# undef __rawmemchr
++
++# define SYMBOL_NAME rawmemchr
++# include "ifunc-rawmemchr.h"
++
++libc_ifunc_redirected (__redirect_rawmemchr, __rawmemchr,
++                       IFUNC_SELECTOR ());
++weak_alias (__rawmemchr, rawmemchr)
++# ifdef SHARED
++__hidden_ver1 (__rawmemchr, __GI___rawmemchr, __redirect___rawmemchr)
++  __attribute__((visibility ("hidden")));
++# endif
++#endif
+diff --git a/sysdeps/loongarch/lp64/rawmemchr.S b/sysdeps/loongarch/lp64/rawmemchr.S
+new file mode 100644
+index 0000000000..94b70f2d70
+--- /dev/null
++++ b/sysdeps/loongarch/lp64/rawmemchr.S
+@@ -0,0 +1,114 @@
++#ifdef _LIBC
++#include <sysdep.h>
++#include <sys/regdef.h>
++#include <sys/asm.h>
++#else
++#include <sys/asm.h>
++#include <sys/regdef.h>
++#endif
++
++#ifndef RAWMEMCHR_NAME
++# define RAWMEMCHR_NAME __rawmemchr
++#endif
++
++
++LEAF(RAWMEMCHR_NAME)
++    .align      6
++    andi        t1, a0, 0x7
++    bstrins.d   a0, zero, 2, 0
++    lu12i.w     a2, 0x01010
++    bstrins.d   a1, a1, 15, 8
++
++    ld.d        t0, a0, 0
++    slli.d      t1, t1, 3
++    ori         a2, a2, 0x101
++    bstrins.d   a1, a1, 31, 16
++
++    li.w        t8, -1
++    bstrins.d   a1, a1, 63, 32
++    bstrins.d   a2, a2, 63, 32
++    sll.d       t2, t8, t1
++
++    sll.d       t3, a1, t1
++    orn         t0, t0, t2
++    slli.d      a3, a2, 7
++    beqz        a1, L(find_zero)
++
++    xor         t0, t0, t3
++    sub.d       t1, t0, a2
++    andn        t2, a3, t0
++    and         t3, t1, t2
++
++    bnez        t3, L(count_pos)
++    addi.d      a0, a0, 8
++
++L(loop):
++    ld.d        t0, a0, 0
++    xor         t0, t0, a1
++
++    sub.d       t1, t0, a2
++    andn        t2, a3, t0
++    and         t3, t1, t2
++    bnez        t3, L(count_pos)
++
++    ld.d        t0, a0, 8
++    addi.d      a0, a0, 16
++    xor         t0, t0, a1
++    sub.d       t1, t0, a2
++
++    andn        t2, a3, t0
++    and         t3, t1, t2
++    beqz        t3, L(loop)
++    addi.d      a0, a0, -8
++L(count_pos):
++    ctz.d       t0, t3
++    srli.d      t0, t0, 3
++    add.d       a0, a0, t0
++    jr          ra
++
++L(loop_7bit):
++    ld.d        t0, a0, 0
++L(find_zero):
++    sub.d       t1, t0, a2
++    and         t2, t1, a3
++    bnez        t2, L(more_check)
++
++    ld.d        t0, a0, 8
++    addi.d      a0, a0, 16
++    sub.d       t1, t0, a2
++    and         t2, t1, a3
++
++    beqz        t2, L(loop_7bit)
++    addi.d      a0, a0, -8
++
++L(more_check):
++    andn        t2, a3, t0
++    and         t3, t1, t2
++    bnez        t3, L(count_pos)
++    addi.d      a0, a0, 8
++
++L(loop_8bit):
++    ld.d        t0, a0, 0
++
++    sub.d       t1, t0, a2
++    andn        t2, a3, t0
++    and         t3, t1, t2
++    bnez        t3, L(count_pos)
++
++    ld.d        t0, a0, 8
++    addi.d      a0, a0, 16
++    sub.d       t1, t0, a2
++
++    andn        t2, a3, t0
++    and         t3, t1, t2
++    beqz        t3, L(loop_8bit)
++
++    addi.d      a0, a0, -8
++    b           L(count_pos)
++
++END(RAWMEMCHR_NAME)
++
++#ifdef _LIBC
++weak_alias (__rawmemchr, rawmemchr)
++libc_hidden_builtin_def (__rawmemchr)
++#endif
+-- 
+2.20.1
+

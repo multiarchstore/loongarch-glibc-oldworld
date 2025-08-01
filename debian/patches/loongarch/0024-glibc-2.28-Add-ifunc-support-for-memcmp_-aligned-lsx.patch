@@ -1,0 +1,706 @@
+From 36b38a6da47d6a64d2de1e208752b49507b87bfd Mon Sep 17 00:00:00 2001
+From: caiyinyu <caiyinyu@loongson.cn>
+Date: Thu, 16 Feb 2023 15:22:46 +0800
+Subject: [PATCH 24/44] glibc-2.28: Add ifunc support for memcmp_{aligned, lsx}
+
+Change-Id: Ida44bc177f6e168317b3fcb2c46b3e4c1bd8ccb9
+---
+ sysdeps/loongarch/lp64/memcmp.S               | 284 ++++++++++++++++++
+ sysdeps/loongarch/lp64/multiarch/Makefile     |   3 +-
+ .../lp64/multiarch/ifunc-impl-list.c          |   5 +
+ .../loongarch/lp64/multiarch/ifunc-memcmp.h   |  34 +++
+ .../loongarch/lp64/multiarch/memcmp-aligned.S |   9 +
+ sysdeps/loongarch/lp64/multiarch/memcmp-lsx.S | 258 ++++++++++++++++
+ sysdeps/loongarch/lp64/multiarch/memcmp.c     |  39 +++
+ 7 files changed, 631 insertions(+), 1 deletion(-)
+ create mode 100644 sysdeps/loongarch/lp64/memcmp.S
+ create mode 100644 sysdeps/loongarch/lp64/multiarch/ifunc-memcmp.h
+ create mode 100644 sysdeps/loongarch/lp64/multiarch/memcmp-aligned.S
+ create mode 100644 sysdeps/loongarch/lp64/multiarch/memcmp-lsx.S
+ create mode 100644 sysdeps/loongarch/lp64/multiarch/memcmp.c
+
+diff --git a/sysdeps/loongarch/lp64/memcmp.S b/sysdeps/loongarch/lp64/memcmp.S
+new file mode 100644
+index 0000000000..b4e5e534ae
+--- /dev/null
++++ b/sysdeps/loongarch/lp64/memcmp.S
+@@ -0,0 +1,284 @@
++#ifdef _LIBC
++#include <sysdep.h>
++#include <sys/regdef.h>
++#include <sys/asm.h>
++#else
++#include <sys/asm.h>
++#include <sys/regdef.h>
++#endif
++
++#ifndef MEMCMP_NAME
++#define MEMCMP_NAME memcmp
++#endif
++
++LEAF(MEMCMP_NAME)
++    .align      6
++    beqz        a2, L(ret)
++    andi        a4, a1, 0x7
++    andi        a3, a0, 0x7
++    sltu        a5, a4, a3
++
++    xor         t0, a0, a1
++    li.w        t8, 8
++    maskeqz     t0, t0, a5
++    li.w        t7, -1
++
++    xor         a0, a0, t0	// a0 hold smaller one
++    xor         a1, a1, t0	// a1 hold larger one
++    andi        a3, a0, 0x7	// a3 hold small offset
++    andi        a4, a1, 0x7	// a4 hold larger offset
++
++    xor         a0, a0, a3
++    xor         a1, a1, a4
++    ld.d        t2, a0, 0	// t2 = "fedcbaXX"
++    ld.d        t1, a1, 0	// t1 = "54321YYY"
++
++    slli.d      t3, a3, 3
++    slli.d      t4, a4, 3
++    sub.d       a6, t3, t4	// a6 = 0xfffffffffffffff8
++    srl.d       t1, t1, t4	// t1 = "00054321"
++
++    srl.d       t0, t2, t3	// t0 = "00fedcba"
++    srl.d       t5, t7, t4	// t5 = 0x000000FFFFFFFFFF
++    sub.d       t6, t0, t1	// t6 hold diff
++    and         t6, t6, t5	// t6 = "000xxxxx"
++
++    sub.d       t5, t8, a4	// t5 hold margin 8 - 3 = 5
++    bnez        t6, L(first_out)
++    bgeu        t5, a2, L(ret)
++    sub.d       a2, a2, t5
++
++    bnez        a6, L(unaligned)
++    blt         a2, t8, L(al_less_8bytes)
++    andi        t1, a2, 31
++    beq         t1, a2, L(al_less_32bytes)
++
++    sub.d       t2, a2, t1
++    add.d       a4, a0, t2
++    move        a2, t1
++
++L(al_loop):
++    ld.d        t0, a0, 8
++
++    ld.d        t1, a1, 8
++    ld.d        t2, a0, 16
++    ld.d        t3, a1, 16
++    ld.d        t4, a0, 24
++
++    ld.d        t5, a1, 24
++    ld.d        t6, a0, 32
++    ld.d        t7, a1, 32
++    addi.d      a0, a0, 32
++
++    addi.d      a1, a1, 32
++    bne         t0, t1, L(out1)
++    bne         t2, t3, L(out2)
++    bne         t4, t5, L(out3)
++
++    bne         t6, t7, L(out4)
++    bne         a0, a4, L(al_loop)
++
++L(al_less_32bytes):
++    srai.d      a4, a2, 4
++    beqz        a4, L(al_less_16bytes)
++
++    ld.d        t0, a0, 8
++    ld.d        t1, a1, 8
++    ld.d        t2, a0, 16
++    ld.d        t3, a1, 16
++
++    addi.d      a0, a0, 16
++    addi.d      a1, a1, 16
++    addi.d      a2, a2, -16
++    bne         t0, t1, L(out1)
++
++    bne         t2, t3, L(out2)
++
++L(al_less_16bytes):
++    srai.d      a4, a2, 3
++    beqz        a4, L(al_less_8bytes)
++    ld.d        t0, a0, 8
++
++    ld.d        t1, a1, 8
++    addi.d      a0, a0, 8
++    addi.d      a1, a1, 8
++    addi.d      a2, a2, -8
++
++    bne         t0, t1, L(out1)
++
++L(al_less_8bytes):
++    beqz        a2, L(ret)
++    ld.d        t0, a0, 8
++    ld.d        t1, a1, 8
++
++    li.d        t7, -1
++    slli.d      t2, a2, 3
++    sll.d       t2, t7, t2
++    sub.d       t3, t0, t1
++
++    andn        t6, t3, t2
++    bnez        t6, L(count_diff)
++
++L(ret):
++    move        a0, zero
++    jr          ra
++
++L(out4):
++    move        t0, t6
++    move        t1, t7
++    sub.d       t6, t6, t7
++    b           L(count_diff)
++
++L(out3):
++    move        t0, t4
++    move        t1, t5
++    sub.d       t6, t4, t5
++    b           L(count_diff)
++
++L(out2):
++    move        t0, t2
++    move        t1, t3
++L(out1):
++    sub.d       t6, t0, t1
++    b           L(count_diff)
++
++L(first_out):
++    slli.d      t4, a2, 3
++    slt         t3, a2, t5
++    sll.d       t4, t7, t4
++    maskeqz     t4, t4, t3
++
++    andn        t6, t6, t4
++
++L(count_diff):
++    ctz.d       t2, t6
++    bstrins.d   t2, zero, 2, 0
++    srl.d       t0, t0, t2
++
++    srl.d       t1, t1, t2
++    andi        t0, t0, 0xff
++    andi        t1, t1, 0xff
++    sub.d       t2, t0, t1
++
++    sub.d       t3, t1, t0
++    masknez     t2, t2, a5
++    maskeqz     t3, t3, a5
++    or          a0, t2, t3
++
++    jr          ra
++
++L(unaligned):
++    sub.d       a7, zero, a6
++    srl.d       t0, t2, a6
++    blt         a2, t8, L(un_less_8bytes)
++
++    andi        t1, a2, 31
++    beq         t1, a2, L(un_less_32bytes)
++    sub.d       t2, a2, t1
++    add.d       a4, a0, t2
++
++    move        a2, t1
++
++L(un_loop):
++    ld.d        t2, a0, 8
++    ld.d        t1, a1, 8
++    ld.d        t4, a0, 16
++
++    ld.d        t3, a1, 16
++    ld.d        t6, a0, 24
++    ld.d        t5, a1, 24
++    ld.d        t8, a0, 32
++
++    ld.d        t7, a1, 32
++    addi.d      a0, a0, 32
++    addi.d      a1, a1, 32
++    sll.d       a3, t2, a7
++
++    or          t0, a3, t0
++    bne         t0, t1, L(out1)
++    srl.d       t0, t2, a6
++    sll.d       a3, t4, a7
++
++    or          t2, a3, t0
++    bne         t2, t3, L(out2)
++    srl.d       t0, t4, a6
++    sll.d       a3, t6, a7
++
++    or          t4, a3, t0
++    bne         t4, t5, L(out3)
++    srl.d       t0, t6, a6
++    sll.d       a3, t8, a7
++
++    or          t6, t0, a3
++    bne         t6, t7, L(out4)
++    srl.d       t0, t8, a6
++    bne         a0, a4, L(un_loop)
++
++L(un_less_32bytes):
++    srai.d      a4, a2, 4
++    beqz        a4, L(un_less_16bytes)
++    ld.d        t2, a0, 8
++    ld.d        t1, a1, 8
++
++    ld.d        t4, a0, 16
++    ld.d        t3, a1, 16
++    addi.d      a0, a0, 16
++    addi.d      a1, a1, 16
++
++    addi.d      a2, a2, -16
++    sll.d       a3, t2, a7
++    or          t0, a3, t0
++    bne         t0, t1, L(out1)
++
++    srl.d       t0, t2, a6
++    sll.d       a3, t4, a7
++    or          t2, a3, t0
++    bne         t2, t3, L(out2)
++
++    srl.d       t0, t4, a6
++
++L(un_less_16bytes):
++    srai.d      a4, a2, 3
++    beqz        a4, L(un_less_8bytes)
++    ld.d        t2, a0, 8
++
++    ld.d        t1, a1, 8
++    addi.d      a0, a0, 8
++    addi.d      a1, a1, 8
++    addi.d      a2, a2, -8
++
++    sll.d       a3, t2, a7
++    or          t0, a3, t0
++    bne         t0, t1, L(out1)
++    srl.d       t0, t2, a6
++
++L(un_less_8bytes):
++    beqz        a2, L(ret)
++    andi        a7, a7, 63
++    slli.d      a4, a2, 3
++    bgeu        a7, a4, L(last_cmp)
++
++    ld.d        t2, a0, 8
++    sll.d       a3, t2, a7
++    or          t0, a3, t0
++
++L(last_cmp):
++    ld.d        t1, a1, 8
++
++    li.d        t7, -1
++    sll.d       t2, t7, a4
++    sub.d       t3, t0, t1
++    andn        t6, t3, t2
++
++    bnez        t6, L(count_diff)
++    move        a0, zero
++    jr          ra
++
++END(MEMCMP_NAME)
++
++#ifdef _LIBC
++libc_hidden_builtin_def (MEMCMP_NAME)
++#endif
++
++#undef bcmp
++weak_alias (memcmp, bcmp)
+diff --git a/sysdeps/loongarch/lp64/multiarch/Makefile b/sysdeps/loongarch/lp64/multiarch/Makefile
+index d0a12eab82..2a799c138b 100644
+--- a/sysdeps/loongarch/lp64/multiarch/Makefile
++++ b/sysdeps/loongarch/lp64/multiarch/Makefile
+@@ -3,5 +3,6 @@ sysdep_routines += memcpy-aligned memcpy-unaligned memcpy-lasx \
+ 		   memset-aligned memset-unaligned memset-lasx memset-lsx \
+ 		   memmove-unaligned memmove-lsx \
+ 		   memchr-aligned memchr-lsx \
+-		   memrchr-generic memrchr-lsx
++		   memrchr-generic memrchr-lsx \
++		   memcmp-aligned memcmp-lsx
+ endif
+diff --git a/sysdeps/loongarch/lp64/multiarch/ifunc-impl-list.c b/sysdeps/loongarch/lp64/multiarch/ifunc-impl-list.c
+index b910a4a305..86a7b75bb0 100644
+--- a/sysdeps/loongarch/lp64/multiarch/ifunc-impl-list.c
++++ b/sysdeps/loongarch/lp64/multiarch/ifunc-impl-list.c
+@@ -65,6 +65,11 @@ __libc_ifunc_impl_list (const char *name, struct libc_ifunc_impl *array,
+ 	      IFUNC_IMPL_ADD (array, i, memrchr, 1, __memrchr_lsx)
+ 	      )
+ 
++  IFUNC_IMPL (i, name, memcmp,
++	      IFUNC_IMPL_ADD (array, i, memcmp, 1, __memcmp_lsx)
++	      IFUNC_IMPL_ADD (array, i, memcmp, 1, __memcmp_aligned)
++	      )
++
+   return i;
+ }
+ 
+diff --git a/sysdeps/loongarch/lp64/multiarch/ifunc-memcmp.h b/sysdeps/loongarch/lp64/multiarch/ifunc-memcmp.h
+new file mode 100644
+index 0000000000..c1bb9bc5d9
+--- /dev/null
++++ b/sysdeps/loongarch/lp64/multiarch/ifunc-memcmp.h
+@@ -0,0 +1,34 @@
++/* Common definition for memcmp implementation.
++   All versions must be listed in ifunc-impl-list.c.
++   Copyright (C) 2017-2022 Free Software Foundation, Inc.
++   This file is part of the GNU C Library.
++
++   The GNU C Library is free software; you can redistribute it and/or
++   modify it under the terms of the GNU Lesser General Public
++   License as published by the Free Software Foundation; either
++   version 2.1 of the License, or (at your option) any later version.
++
++   The GNU C Library is distributed in the hope that it will be useful,
++   but WITHOUT ANY WARRANTY; without even the implied warranty of
++   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++   Lesser General Public License for more details.
++
++   You should have received a copy of the GNU Lesser General Public
++   License along with the GNU C Library; if not, see
++   <https://www.gnu.org/licenses/>.  */
++
++#include <init-arch.h>
++
++extern __typeof (REDIRECT_NAME) OPTIMIZE (lsx) attribute_hidden;
++extern __typeof (REDIRECT_NAME) OPTIMIZE (aligned) attribute_hidden;
++
++static inline void *
++IFUNC_SELECTOR (void)
++{
++  INIT_ARCH();
++
++  if (SUPPORT_LSX)
++    return OPTIMIZE (lsx);
++  else
++    return OPTIMIZE (aligned);
++}
+diff --git a/sysdeps/loongarch/lp64/multiarch/memcmp-aligned.S b/sysdeps/loongarch/lp64/multiarch/memcmp-aligned.S
+new file mode 100644
+index 0000000000..9cb651b164
+--- /dev/null
++++ b/sysdeps/loongarch/lp64/multiarch/memcmp-aligned.S
+@@ -0,0 +1,9 @@
++
++#if IS_IN (libc)
++
++#define MEMCMP_NAME __memcmp_aligned
++
++#endif
++
++#include "../memcmp.S"
++
+diff --git a/sysdeps/loongarch/lp64/multiarch/memcmp-lsx.S b/sysdeps/loongarch/lp64/multiarch/memcmp-lsx.S
+new file mode 100644
+index 0000000000..c49a5f4c8e
+--- /dev/null
++++ b/sysdeps/loongarch/lp64/multiarch/memcmp-lsx.S
+@@ -0,0 +1,258 @@
++#ifdef _LIBC
++#include <sysdep.h>
++#include <sys/regdef.h>
++#include <sys/asm.h>
++#else
++#include <sys/asm.h>
++#include <sys/regdef.h>
++#endif
++
++#if IS_IN (libc)
++
++#define MEMCMP_NAME __memcmp_lsx
++
++L(magic_num):
++    .align          6
++    .dword          0x0706050403020100
++    .dword          0x0f0e0d0c0b0a0908
++    nop
++    nop
++ENTRY_NO_ALIGN(MEMCMP_NAME)
++    beqz            a2, L(out)
++    pcaddi          t0, -7
++
++    andi            a3, a0, 0xf
++    vld             $vr5, t0, 0
++    andi            a4, a1, 0xf
++    bne             a3, a4, L(unaligned)
++
++    bstrins.d       a0, zero, 3, 0
++    xor             a1, a1, a4
++    vld             $vr0, a0, 0
++    vld             $vr1, a1, 0
++
++
++    li.d            t0, 16
++    vreplgr2vr.b    $vr3, a3
++    sub.d           t1, t0, a3
++    vadd.b          $vr3, $vr3, $vr5
++
++    vshuf.b         $vr0, $vr3, $vr0, $vr3
++    vshuf.b         $vr1, $vr3, $vr1, $vr3
++    vseq.b          $vr4, $vr0, $vr1
++    bgeu            t1, a2, L(al_end)
++
++    vsetanyeqz.b    $fcc0, $vr4
++    bcnez           $fcc0, L(al_found)
++    sub.d           a2, a2, t1
++    andi            t1, a2, 31
++
++    beq             a2, t1, L(al_less_32bytes)
++    sub.d           t2, a2, t1
++    move            a2, t1
++    add.d           a4, a0, t2
++
++
++L(al_loop):
++    vld             $vr0, a0, 16
++    vld             $vr1, a1, 16
++    vld             $vr2, a0, 32
++    vld             $vr3, a1, 32
++
++    addi.d          a0, a0, 32
++    addi.d          a1, a1, 32
++    vseq.b          $vr4, $vr0, $vr1
++    vseq.b          $vr6, $vr2, $vr3
++
++    vand.v          $vr6, $vr4, $vr6
++    vsetanyeqz.b    $fcc0, $vr6
++    bcnez           $fcc0, L(al_pair_end)
++    bne             a0, a4, L(al_loop)
++
++L(al_less_32bytes):
++    bgeu            t0, a2, L(al_less_16bytes)
++    vld             $vr0, a0, 16
++    vld             $vr1, a1, 16
++    vld             $vr2, a0, 32
++
++
++    vld             $vr3, a1, 32
++    addi.d          a2, a2, -16
++    vreplgr2vr.b    $vr6, a2
++    vslt.b          $vr5, $vr5, $vr6
++
++    vseq.b          $vr4, $vr0, $vr1
++    vseq.b          $vr6, $vr2, $vr3
++    vorn.v          $vr6, $vr6, $vr5
++L(al_pair_end):
++    vsetanyeqz.b    $fcc0, $vr4
++
++    bcnez           $fcc0, L(al_found)
++    vnori.b         $vr4, $vr6, 0
++    vfrstpi.b       $vr4, $vr4, 0
++    vshuf.b         $vr0, $vr2, $vr2, $vr4
++
++    vshuf.b         $vr1, $vr3, $vr3, $vr4
++    vpickve2gr.bu   t0, $vr0, 0
++    vpickve2gr.bu   t1, $vr1, 0
++    sub.d           a0, t0, t1
++
++
++    jr              ra
++L(al_less_16bytes):
++    beqz            a2, L(out)
++    vld             $vr0, a0, 16
++    vld             $vr1, a1, 16
++
++    vseq.b          $vr4, $vr0, $vr1
++L(al_end):
++    vreplgr2vr.b    $vr6, a2
++    vslt.b          $vr5, $vr5, $vr6
++    vorn.v          $vr4, $vr4, $vr5
++
++L(al_found):
++    vnori.b         $vr4, $vr4, 0
++    vfrstpi.b       $vr4, $vr4, 0
++    vshuf.b         $vr0, $vr0, $vr0, $vr4
++    vshuf.b         $vr1, $vr1, $vr1, $vr4
++
++    vpickve2gr.bu   t0, $vr0, 0
++    vpickve2gr.bu   t1, $vr1, 0
++    sub.d           a0, t0, t1
++    jr              ra
++
++
++L(unaligned):
++    xor             t2, a0, a1
++    sltu            a5, a3, a4
++    masknez         t2, t2, a5
++    xor             a0, a0, t2      # a0 point to string with smaller offset 2
++
++    xor             a1, a1, t2      # a1 point to string with larger 4
++    andi            a3, a0, 0xf     # a3 = 2
++    andi            a4, a1, 0xf     # a4 = 4
++    bstrins.d       a0, zero, 3, 0
++
++    xor             a1, a1, a4
++    vld             $vr4, a0, 0
++    vld             $vr1, a1, 0
++    li.d            t0, 16
++
++    vreplgr2vr.b    $vr2, a4
++    sub.d           a6, a4, a3  # a6 hold the diff
++    sub.d           t1, t0, a4
++    sub.d           t2, t0, a6
++
++
++    vadd.b          $vr2, $vr2, $vr5 # [4, 5, 6, ...]
++    vreplgr2vr.b    $vr6, t2
++    vadd.b          $vr6, $vr6, $vr5 # [14, 15, 16, ... ]
++    vshuf.b         $vr0, $vr4, $vr4, $vr6  # make data be in the same position
++
++    vshuf.b         $vr1, $vr2, $vr1, $vr2
++    vshuf.b         $vr0, $vr2, $vr0, $vr2
++    vseq.b          $vr7, $vr0, $vr1
++    bgeu            t1, a2, L(un_end)
++
++    vsetanyeqz.b    $fcc0, $vr7
++    bcnez           $fcc0, L(un_found)
++    sub.d           a2, a2, t1
++    andi            t1, a2, 31
++
++    beq             a2, t1, L(un_less_32bytes)
++    sub.d           t2, a2, t1
++    move            a2, t1
++    add.d           a4, a1, t2
++
++
++L(un_loop):
++    vld             $vr2, a0, 16
++    vld             $vr1, a1, 16
++    vld             $vr3, a1, 32
++    addi.d          a1, a1, 32
++
++    addi.d          a0, a0, 32
++    vshuf.b         $vr0, $vr2, $vr4, $vr6
++    vld             $vr4, a0, 0
++    vseq.b          $vr7, $vr0, $vr1
++
++    vshuf.b         $vr2, $vr4, $vr2, $vr6
++    vseq.b          $vr8, $vr2, $vr3
++    vand.v          $vr8, $vr7, $vr8
++    vsetanyeqz.b    $fcc0, $vr8
++
++    bcnez           $fcc0, L(un_pair_end)
++    bne             a1, a4, L(un_loop)
++L(un_less_32bytes):
++    bltu            a2, t0, L(un_less_16bytes)
++    vld             $vr2, a0, 16
++
++
++    vld             $vr1, a1, 16
++    addi.d          a0, a0, 16
++    addi.d          a1, a1, 16
++    addi.d          a2, a2, -16
++
++    vshuf.b         $vr0, $vr2, $vr4, $vr6
++    vor.v           $vr4, $vr2, $vr2
++    vseq.b          $vr7, $vr0, $vr1
++    vsetanyeqz.b    $fcc0, $vr7
++
++    bcnez           $fcc0, L(un_found)
++L(un_less_16bytes):
++    beqz            a2, L(out)
++    vld             $vr1, a1, 16
++    bgeu            a6, a2, 1f
++
++    vld             $vr2, a0, 16
++1:
++    vshuf.b         $vr0, $vr2, $vr4, $vr6
++    vseq.b          $vr7, $vr0, $vr1
++L(un_end):
++    vreplgr2vr.b    $vr3, a2
++
++
++    vslt.b          $vr3, $vr5, $vr3
++    vorn.v          $vr7, $vr7, $vr3
++L(un_found):
++    vnori.b         $vr7, $vr7, 0
++    vfrstpi.b       $vr7, $vr7, 0
++
++    vshuf.b         $vr0, $vr0, $vr0, $vr7
++    vshuf.b         $vr1, $vr1, $vr1, $vr7
++L(calc_result):
++    vpickve2gr.bu   t0, $vr0, 0
++    vpickve2gr.bu   t1, $vr1, 0
++
++    sub.d           t2, t0, t1
++    sub.d           t3, t1, t0
++    masknez         t0, t3, a5
++    maskeqz         t1, t2, a5
++
++    or              a0, t0, t1
++    jr              ra
++L(un_pair_end):
++    vsetanyeqz.b    $fcc0, $vr7
++    bcnez           $fcc0, L(un_found)
++
++
++    vnori.b         $vr7, $vr8, 0
++    vfrstpi.b       $vr7, $vr7, 0
++    vshuf.b         $vr0, $vr2, $vr2, $vr7
++    vshuf.b         $vr1, $vr3, $vr3, $vr7
++
++    b               L(calc_result)
++L(out):
++    move            a0, zero
++    jr              ra
++
++END(MEMCMP_NAME)
++
++#ifdef _LIBC
++libc_hidden_builtin_def (MEMCMP_NAME)
++#endif
++
++#undef bcmp
++weak_alias (MEMCMP_NAME, bcmp)
++
++#endif
+diff --git a/sysdeps/loongarch/lp64/multiarch/memcmp.c b/sysdeps/loongarch/lp64/multiarch/memcmp.c
+new file mode 100644
+index 0000000000..5efdf26504
+--- /dev/null
++++ b/sysdeps/loongarch/lp64/multiarch/memcmp.c
+@@ -0,0 +1,39 @@
++/* Multiple versions of memcmp.
++   All versions must be listed in ifunc-impl-list.c.
++   Copyright (C) 2017-2022 Free Software Foundation, Inc.
++   This file is part of the GNU C Library.
++
++   The GNU C Library is free software; you can redistribute it and/or
++   modify it under the terms of the GNU Lesser General Public
++   License as published by the Free Software Foundation; either
++   version 2.1 of the License, or (at your option) any later version.
++
++   The GNU C Library is distributed in the hope that it will be useful,
++   but WITHOUT ANY WARRANTY; without even the implied warranty of
++   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++   Lesser General Public License for more details.
++
++   You should have received a copy of the GNU Lesser General Public
++   License along with the GNU C Library; if not, see
++   <https://www.gnu.org/licenses/>.  */
++
++/* Define multiple versions only for the definition in libc.  */
++#if IS_IN (libc)
++# define memcmp __redirect_memcmp
++# include <string.h>
++# undef memcmp
++
++# define SYMBOL_NAME memcmp
++# include "ifunc-memcmp.h"
++
++libc_ifunc_redirected (__redirect_memcmp, __new_memcmp,
++		       IFUNC_SELECTOR ());
++
++# ifdef SHARED
++__hidden_ver1 (__new_memcmp, __GI_memcmp, __redirect_memcmp)
++  __attribute__ ((visibility ("hidden")));
++# endif
++
++# include <shlib-compat.h>
++versioned_symbol (libc, __new_memcmp, memcmp, GLIBC_2_27);
++#endif
+-- 
+2.20.1
+

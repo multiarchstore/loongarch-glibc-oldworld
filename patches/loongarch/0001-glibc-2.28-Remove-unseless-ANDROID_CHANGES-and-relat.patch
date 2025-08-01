@@ -1,0 +1,291 @@
+From 4d216603dc243934dffb6e055e70530e492e02ab Mon Sep 17 00:00:00 2001
+From: caiyinyu <caiyinyu@loongson.cn>
+Date: Mon, 17 Apr 2023 17:20:04 +0800
+Subject: [PATCH 1/9] glibc-2.28: Remove unseless ANDROID_CHANGES and related
+ code.
+
+Change-Id: Ib08e92d435126c7b56096ff6f24f1c6b5ea57f46
+---
+ sysdeps/loongarch/lp64/memchr.S                     |  6 ------
+ sysdeps/loongarch/lp64/memcpy.S                     | 13 -------------
+ sysdeps/loongarch/lp64/memset.S                     |  6 ------
+ sysdeps/loongarch/lp64/multiarch/memcpy-unaligned.S |  6 ------
+ .../loongarch/lp64/multiarch/memmove-unaligned.S    |  6 ------
+ sysdeps/loongarch/lp64/multiarch/memset-unaligned.S |  7 -------
+ sysdeps/loongarch/lp64/multiarch/strchr-unaligned.S |  2 --
+ .../loongarch/lp64/multiarch/strchrnul-unaligned.S  |  2 --
+ sysdeps/loongarch/lp64/multiarch/strcpy-unaligned.S |  2 --
+ sysdeps/loongarch/lp64/multiarch/strlen-unaligned.S |  2 --
+ .../loongarch/lp64/multiarch/strncmp-unaligned.S    |  2 --
+ .../loongarch/lp64/multiarch/strnlen-unaligned.S    |  2 --
+ 12 files changed, 56 deletions(-)
+
+diff --git a/sysdeps/loongarch/lp64/memchr.S b/sysdeps/loongarch/lp64/memchr.S
+index ec34b1af89..75c4e15cbd 100644
+--- a/sysdeps/loongarch/lp64/memchr.S
++++ b/sysdeps/loongarch/lp64/memchr.S
+@@ -11,11 +11,7 @@
+ #define MEMCHR_NAME memchr
+ #endif
+ 
+-#ifdef ANDROID_CHANGES
+-LEAF(MEMCHR_NAME, 0)
+-#else
+ LEAF(MEMCHR_NAME)
+-#endif
+     .align      6
+     beqz        a2, L(out)
+     andi        t1, a0, 0x7
+@@ -92,8 +88,6 @@ L(out):
+     jr          ra
+ END(MEMCHR_NAME)
+ 
+-#ifndef ANDROID_CHANGES
+ #ifdef _LIBC
+ libc_hidden_builtin_def (MEMCHR_NAME)
+ #endif
+-#endif
+diff --git a/sysdeps/loongarch/lp64/memcpy.S b/sysdeps/loongarch/lp64/memcpy.S
+index 1076e678ea..b6ca60a192 100644
+--- a/sysdeps/loongarch/lp64/memcpy.S
++++ b/sysdeps/loongarch/lp64/memcpy.S
+@@ -35,29 +35,18 @@
+     st.d        t6, reg, n+48; \
+     st.d        t7, reg, n+56;
+ 
+-#ifdef ANDROID_CHANGES
+-LEAF(MEMMOVE_NAME, 0)
+-#else
+ LEAF(MEMMOVE_NAME)
+-#endif
+-
+     .align      6
+     sub.d       t0, a0, a1
+     bltu        t0, a2, L(copy_back)
+ 
+ END(MEMMOVE_NAME)
+ 
+-#ifndef ANDROID_CHANGES
+ #ifdef _LIBC
+ libc_hidden_builtin_def (MEMMOVE_NAME)
+ #endif
+-#endif
+ 
+-#ifdef ANDROID_CHANGES
+-LEAF(MEMCPY_NAME, 0)
+-#else
+ LEAF(MEMCPY_NAME)
+-#endif
+ 
+     srai.d      a3, a2, 4
+     beqz        a3, L(short_data)  # less than 16 bytes
+@@ -811,8 +800,6 @@ L(back_end):
+ 
+ END(MEMCPY_NAME)
+ 
+-#ifndef ANDROID_CHANGES
+ #ifdef _LIBC
+ libc_hidden_builtin_def (MEMCPY_NAME)
+ #endif
+-#endif
+diff --git a/sysdeps/loongarch/lp64/memset.S b/sysdeps/loongarch/lp64/memset.S
+index 9fe42b24de..41629e7e04 100644
+--- a/sysdeps/loongarch/lp64/memset.S
++++ b/sysdeps/loongarch/lp64/memset.S
+@@ -21,11 +21,7 @@
+     st.d        a1, a0, n+48;   \
+     st.d        a1, a0, n+56;
+ 
+-#ifdef ANDROID_CHANGES
+-LEAF(MEMSET_NAME, 0)
+-#else
+ LEAF(MEMSET_NAME)
+-#endif
+     .align          6
+     move        t0, a0
+     andi        a3, a0, 0x7
+@@ -166,8 +162,6 @@ L(short_0):
+ 
+ END(MEMSET_NAME)
+ 
+-#ifndef ANDROID_CHANGES
+ #ifdef _LIBC
+ libc_hidden_builtin_def (MEMSET_NAME)
+ #endif
+-#endif
+diff --git a/sysdeps/loongarch/lp64/multiarch/memcpy-unaligned.S b/sysdeps/loongarch/lp64/multiarch/memcpy-unaligned.S
+index 5e38df0d30..64b6024402 100644
+--- a/sysdeps/loongarch/lp64/multiarch/memcpy-unaligned.S
++++ b/sysdeps/loongarch/lp64/multiarch/memcpy-unaligned.S
+@@ -31,11 +31,7 @@
+ 	st.d    t6, reg, n+48; \
+ 	st.d    t7, reg, n+56;
+ 
+-#ifdef ANDROID_CHANGES
+-LEAF(MEMCPY_NAME, 0)
+-#else
+ LEAF(MEMCPY_NAME)
+-#endif
+ 
+ //1st var: dst ptr: void *a1 $r4 a0
+ //2nd var: src ptr: void *a2 $r5 a1
+@@ -250,10 +246,8 @@ end_0_8_unalign:
+ 
+ END(MEMCPY_NAME)
+ 
+-#ifndef ANDROID_CHANGES
+ #ifdef _LIBC
+ libc_hidden_builtin_def (MEMCPY_NAME)
+ #endif
+-#endif
+ 
+ #endif
+diff --git a/sysdeps/loongarch/lp64/multiarch/memmove-unaligned.S b/sysdeps/loongarch/lp64/multiarch/memmove-unaligned.S
+index 27ed0c9c9a..42920a1a0b 100644
+--- a/sysdeps/loongarch/lp64/multiarch/memmove-unaligned.S
++++ b/sysdeps/loongarch/lp64/multiarch/memmove-unaligned.S
+@@ -100,11 +100,7 @@
+ 	LD_64(a4, -1024); \
+ 	ST_64(a3, -1024);
+ 
+-#ifdef ANDROID_CHANGES
+-LEAF(MEMMOVE_NAME, 0)
+-#else
+ LEAF(MEMMOVE_NAME)
+-#endif
+ 
+ //1st var: dest ptr: void *str1 $r4 a0
+ //2nd var: src  ptr: void *str2 $r5 a1
+@@ -469,10 +465,8 @@ end_unalign_proc_back:
+ 
+ END(MEMMOVE_NAME)
+ 
+-#ifndef ANDROID_CHANGES
+ #ifdef _LIBC
+ libc_hidden_builtin_def (MEMMOVE_NAME)
+ #endif
+-#endif
+ 
+ #endif
+diff --git a/sysdeps/loongarch/lp64/multiarch/memset-unaligned.S b/sysdeps/loongarch/lp64/multiarch/memset-unaligned.S
+index 16ff2ef7f2..54e5154604 100644
+--- a/sysdeps/loongarch/lp64/multiarch/memset-unaligned.S
++++ b/sysdeps/loongarch/lp64/multiarch/memset-unaligned.S
+@@ -33,12 +33,7 @@
+ //2nd var: int val  $5   a1
+ //3rd var: size_t num  $6  a2
+ 
+-#ifdef ANDROID_CHANGES
+-LEAF(MEMSET_NAME, 0)
+-#else
+ LEAF(MEMSET_NAME)
+-#endif
+-
+ 	.align	6
+ 	bstrins.d a1, a1, 15, 8
+ 	add.d	  t7, a0, a2
+@@ -168,10 +163,8 @@ end_0_8_unalign:
+ 
+ END(MEMSET_NAME)
+ 
+-#ifndef ANDROID_CHANGES
+ #ifdef _LIBC
+ libc_hidden_builtin_def (MEMSET_NAME)
+ #endif
+-#endif
+ 
+ #endif
+diff --git a/sysdeps/loongarch/lp64/multiarch/strchr-unaligned.S b/sysdeps/loongarch/lp64/multiarch/strchr-unaligned.S
+index 1d5e56c5cf..de6c7f4f0b 100644
+--- a/sysdeps/loongarch/lp64/multiarch/strchr-unaligned.S
++++ b/sysdeps/loongarch/lp64/multiarch/strchr-unaligned.S
+@@ -123,10 +123,8 @@ L(_mc8_a):
+ 	jr		ra
+ END(STRCHR_NAME)
+ 
+-#ifndef ANDROID_CHANGES
+ #ifdef _LIBC
+ libc_hidden_builtin_def (STRCHR_NAME)
+ #endif
+-#endif
+ 
+ #endif
+diff --git a/sysdeps/loongarch/lp64/multiarch/strchrnul-unaligned.S b/sysdeps/loongarch/lp64/multiarch/strchrnul-unaligned.S
+index 6338d00519..abc246ca2f 100644
+--- a/sysdeps/loongarch/lp64/multiarch/strchrnul-unaligned.S
++++ b/sysdeps/loongarch/lp64/multiarch/strchrnul-unaligned.S
+@@ -136,11 +136,9 @@ L(_mc8_a):
+ 	jr		ra
+ END(STRCHRNUL_NAME)
+ 
+-#ifndef ANDROID_CHANGES
+ #ifdef _LIBC
+ weak_alias(STRCHRNUL_NAME, strchrnul)
+ libc_hidden_builtin_def (STRCHRNUL_NAME)
+ #endif
+-#endif
+ 
+ #endif
+diff --git a/sysdeps/loongarch/lp64/multiarch/strcpy-unaligned.S b/sysdeps/loongarch/lp64/multiarch/strcpy-unaligned.S
+index 449733cba6..c77dc1a999 100644
+--- a/sysdeps/loongarch/lp64/multiarch/strcpy-unaligned.S
++++ b/sysdeps/loongarch/lp64/multiarch/strcpy-unaligned.S
+@@ -190,10 +190,8 @@ strcpy_page_cross:
+ 	beqz		has_nul, strcpy_page_cross_ok
+ 	b		strcpy_end
+ END(STRCPY)
+-#ifndef ANDROID_CHANGES
+ #ifdef _LIBC
+ libc_hidden_builtin_def (STRCPY)
+ #endif
+-#endif
+ 
+ #endif
+diff --git a/sysdeps/loongarch/lp64/multiarch/strlen-unaligned.S b/sysdeps/loongarch/lp64/multiarch/strlen-unaligned.S
+index e9b7cf6727..2fe0fb34e4 100644
+--- a/sysdeps/loongarch/lp64/multiarch/strlen-unaligned.S
++++ b/sysdeps/loongarch/lp64/multiarch/strlen-unaligned.S
+@@ -107,10 +107,8 @@ strlen_loop_noascii:
+ 	jr		ra
+ END(STRLEN)
+ 
+-#ifndef ANDROID_CHANGES
+ #ifdef _LIBC
+ libc_hidden_builtin_def (STRLEN)
+ #endif
+-#endif
+ 
+ #endif
+diff --git a/sysdeps/loongarch/lp64/multiarch/strncmp-unaligned.S b/sysdeps/loongarch/lp64/multiarch/strncmp-unaligned.S
+index 558df29b1b..6ec107ca05 100644
+--- a/sysdeps/loongarch/lp64/multiarch/strncmp-unaligned.S
++++ b/sysdeps/loongarch/lp64/multiarch/strncmp-unaligned.S
+@@ -248,10 +248,8 @@ strncmp_ret0:
+    then exchange(src1,src2).  */
+ 
+ END(STRNCMP)
+-#ifndef ANDROID_CHANGES
+ #ifdef _LIBC
+ libc_hidden_builtin_def (STRNCMP)
+ #endif
+-#endif
+ 
+ #endif
+diff --git a/sysdeps/loongarch/lp64/multiarch/strnlen-unaligned.S b/sysdeps/loongarch/lp64/multiarch/strnlen-unaligned.S
+index 60eccf00e5..4a195b7c83 100644
+--- a/sysdeps/loongarch/lp64/multiarch/strnlen-unaligned.S
++++ b/sysdeps/loongarch/lp64/multiarch/strnlen-unaligned.S
+@@ -136,10 +136,8 @@ L(_hit_limit):
+     move	len, limit
+     jr		ra
+ END(STRNLEN)
+-#ifndef ANDROID_CHANGES
+ #ifdef _LIBC
+ libc_hidden_builtin_def (STRNLEN)
+ #endif
+-#endif
+ 
+ #endif
+-- 
+2.40.1
+

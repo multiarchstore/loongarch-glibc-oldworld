@@ -1,0 +1,63 @@
+From b1e643f653a162e0751b67a81e53d338f73a1f32 Mon Sep 17 00:00:00 2001
+From: Xiaolin Tang <tangxiaolin@loongson.cn>
+Date: Wed, 26 Oct 2022 15:24:45 +0800
+Subject: [PATCH 02/44] glibc-2.28: Make benchmark output valid.
+
+Add the duration and iterations attributes to fix "'duration'
+is required property" in benchtests/bench-skeleton.c.
+
+Add the workload test properties (max-throughput, latency, etc.) to
+fix "Additional properties are not allowed ('reciprocal-throughput'
+,'max-throughput', 'latency', 'min-throughput' were unexpected)".
+in benchtests/scripts/benchout.schema.json
+
+       * benchtests/bench-skeleton.c: Add duration and
+       iterations attributes.
+       * benchtests/scripts/benchout.schema.json: Add
+       new properties.
+
+From branch master of the latest glibc.
+commit: 44727aec4fc260331cf52fa752223dcf39607a0a
+        8cac1f263528d6e943554e175f39e03d2a4a3d26
+
+Change-Id: I505cd4917784a9b0ee6600618173af188a0b958a
+---
+ benchtests/bench-skeleton.c             | 2 ++
+ benchtests/scripts/benchout.schema.json | 8 ++++++++
+ 2 files changed, 10 insertions(+)
+
+diff --git a/benchtests/bench-skeleton.c b/benchtests/bench-skeleton.c
+index 666212a64f..4fc1827ca5 100644
+--- a/benchtests/bench-skeleton.c
++++ b/benchtests/bench-skeleton.c
+@@ -144,6 +144,8 @@ main (int argc, char **argv)
+ 
+       if (is_bench)
+ 	{
++	  json_attr_double (&json_ctx, "duration", throughput + latency);
++	  json_attr_double (&json_ctx, "iterations", 2 * d_total_i);
+ 	  json_attr_double (&json_ctx, "reciprocal-throughput",
+ 			    throughput / d_total_i);
+ 	  json_attr_double (&json_ctx, "latency", latency / d_total_i);
+diff --git a/benchtests/scripts/benchout.schema.json b/benchtests/scripts/benchout.schema.json
+index 0eca21b6bd..5f098e91c9 100644
+--- a/benchtests/scripts/benchout.schema.json
++++ b/benchtests/scripts/benchout.schema.json
+@@ -23,6 +23,14 @@
+                 "max": {"type": "number"},
+                 "min": {"type": "number"},
+                 "mean": {"type": "number"},
++                "latency": {"type": "number"},
++                "min-throughput": {"type": "number"},
++                "max-throughput": {"type": "number"},
++                "reciprocal-throughput": {"type": "number"},
++                "min-outlier": {"type": "number"},
++                "max-outlier": {"type": "number"},
++                "wall-sec": {"type": "number"},
++                "stdev": {"type": "number"},
+                 "timings": {
+                   "type": "array",
+                   "items": {"type": "number"}
+-- 
+2.20.1
+

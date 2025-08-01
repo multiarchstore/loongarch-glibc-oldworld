@@ -1,0 +1,39 @@
+From dee46a85f301971989afc87d8e9609d0285c8c7e Mon Sep 17 00:00:00 2001
+From: caiyinyu <caiyinyu@loongson.cn>
+Date: Sun, 23 Jul 2023 14:32:08 +0800
+Subject: [PATCH 04/11] glibc-2.28: Remove useless IS_LA{264,364,464} and
+ IS_LA{264, 364, 464}.
+
+Change-Id: Id9a573510e2a493151191372d651f381ec2aefe7
+---
+ sysdeps/unix/sysv/linux/loongarch/cpu-features.h | 7 -------
+ 1 file changed, 7 deletions(-)
+
+diff --git a/sysdeps/unix/sysv/linux/loongarch/cpu-features.h b/sysdeps/unix/sysv/linux/loongarch/cpu-features.h
+index b46a848959..2703d4f7ba 100644
+--- a/sysdeps/unix/sysv/linux/loongarch/cpu-features.h
++++ b/sysdeps/unix/sysv/linux/loongarch/cpu-features.h
+@@ -22,10 +22,6 @@
+ #include <stdint.h>
+ #include <sys/auxv.h>
+ 
+-#define LA264 0x14a000
+-#define LA364 0x14b000
+-#define LA464 0x14c011
+-
+ struct cpu_features
+ {
+   uint64_t cpucfg_prid;
+@@ -42,9 +38,6 @@ extern const struct cpu_features *_dl_larch_get_cpu_features (void)
+ 		:"=r"(ret)			\
+ 		:"r"(index));
+ 
+-#define IS_LA264(prid) (prid == LA264)
+-#define IS_LA364(prid) (prid == LA364)
+-#define IS_LA464(prid) (prid == LA464)
+ #define SUPPORT_UAL (GLRO (dl_hwcap) & HWCAP_LOONGARCH_UAL)
+ #define SUPPORT_LSX (GLRO (dl_hwcap) & HWCAP_LOONGARCH_LSX)
+ #define SUPPORT_LASX (GLRO (dl_hwcap) & HWCAP_LOONGARCH_LASX)
+-- 
+2.40.1
+

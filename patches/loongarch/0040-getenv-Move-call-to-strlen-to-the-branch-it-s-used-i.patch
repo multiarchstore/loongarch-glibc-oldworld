@@ -1,0 +1,46 @@
+From 307d7a210479b33edeb7f0f09f712da7c6a729e7 Mon Sep 17 00:00:00 2001
+From: wanghongliang <wanghongliang@loongson.cn>
+Date: Fri, 3 Mar 2023 09:29:21 +0800
+Subject: [PATCH 40/44] getenv: Move call to strlen to the branch it's used in.
+
+From 59d572ef613252281e31f867099c43f098319ad7 Mon Sep 17 00:00:00 2001
+From: Lode Willems <Lode.Willems@UGent.be>
+Date: Fri, 18 Dec 2020 12:02:27 +0530
+Subject: [PATCH] getenv: Move call to strlen to the branch it's used in.
+
+The len variable is only used in the else branch.
+We don't need the call to strlen if the name is 0 or 1 characters long.
+
+2019-10-02  Lode Willems  <Lode.Willems@UGent.be>
+
+	* tdlib/getenv.c: Move the call to strlen into the branch it's used.
+
+Signed-off-by: wanghongliang <wanghongliang@loongson.cn>
+Change-Id: Id3aa1c6b8059ace6dabf4876f409d5a11843ce32
+---
+ stdlib/getenv.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/stdlib/getenv.c b/stdlib/getenv.c
+index 84a54a3d10..9832bcaa87 100644
+--- a/stdlib/getenv.c
++++ b/stdlib/getenv.c
+@@ -32,7 +32,6 @@
+ char *
+ getenv (const char *name)
+ {
+-  size_t len = strlen (name);
+   char **ep;
+   uint16_t name_start;
+ 
+@@ -63,6 +62,7 @@ getenv (const char *name)
+     }
+   else
+     {
++      size_t len = strlen (name);
+ #if _STRING_ARCH_unaligned
+       name_start = *(const uint16_t *) name;
+ #else
+-- 
+2.20.1
+

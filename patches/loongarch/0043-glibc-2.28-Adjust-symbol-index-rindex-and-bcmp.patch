@@ -1,0 +1,129 @@
+From 7f3db8fd764297b00f3bfce721332c96b2bdd34d Mon Sep 17 00:00:00 2001
+From: caiyinyu <caiyinyu@loongson.cn>
+Date: Fri, 3 Mar 2023 11:24:23 +0800
+Subject: [PATCH 43/44] glibc-2.28: Adjust symbol index rindex and bcmp
+
+Change-Id: Ibeacdf943d8be82fa1aa05a55fa59923ce973dfd
+---
+ sysdeps/loongarch/lp64/memcmp.S                    | 3 ---
+ sysdeps/loongarch/lp64/multiarch/memcmp-aligned.S  | 2 ++
+ sysdeps/loongarch/lp64/multiarch/memcmp.c          | 2 ++
+ sysdeps/loongarch/lp64/multiarch/strchr-aligned.S  | 2 ++
+ sysdeps/loongarch/lp64/multiarch/strchr.c          | 2 +-
+ sysdeps/loongarch/lp64/multiarch/strrchr-aligned.S | 4 ++++
+ sysdeps/loongarch/lp64/multiarch/strrchr.c         | 2 +-
+ sysdeps/loongarch/lp64/strchr.S                    | 5 -----
+ sysdeps/loongarch/lp64/strrchr.S                   | 2 --
+ 9 files changed, 12 insertions(+), 12 deletions(-)
+
+diff --git a/sysdeps/loongarch/lp64/memcmp.S b/sysdeps/loongarch/lp64/memcmp.S
+index 7db75b341b..9e57a92479 100644
+--- a/sysdeps/loongarch/lp64/memcmp.S
++++ b/sysdeps/loongarch/lp64/memcmp.S
+@@ -279,6 +279,3 @@ END(MEMCMP_NAME)
+ #ifdef _LIBC
+ libc_hidden_builtin_def (MEMCMP_NAME)
+ #endif
+-
+-#undef bcmp
+-weak_alias (MEMCMP_NAME, bcmp)
+diff --git a/sysdeps/loongarch/lp64/multiarch/memcmp-aligned.S b/sysdeps/loongarch/lp64/multiarch/memcmp-aligned.S
+index 9cb651b164..512eabcae0 100644
+--- a/sysdeps/loongarch/lp64/multiarch/memcmp-aligned.S
++++ b/sysdeps/loongarch/lp64/multiarch/memcmp-aligned.S
+@@ -6,4 +6,6 @@
+ #endif
+ 
+ #include "../memcmp.S"
++# undef bcmp
++weak_alias (MEMCMP_NAME, bcmp)
+ 
+diff --git a/sysdeps/loongarch/lp64/multiarch/memcmp.c b/sysdeps/loongarch/lp64/multiarch/memcmp.c
+index 1987790c81..a956761e6c 100644
+--- a/sysdeps/loongarch/lp64/multiarch/memcmp.c
++++ b/sysdeps/loongarch/lp64/multiarch/memcmp.c
+@@ -28,6 +28,8 @@
+ 
+ libc_ifunc_redirected (__redirect_memcmp, __new_memcmp,
+ 		       IFUNC_SELECTOR ());
++# undef bcmp
++weak_alias (__new_memcmp, bcmp)
+ 
+ # ifdef SHARED
+ __hidden_ver1 (__new_memcmp, __GI_memcmp, __redirect_memcmp)
+diff --git a/sysdeps/loongarch/lp64/multiarch/strchr-aligned.S b/sysdeps/loongarch/lp64/multiarch/strchr-aligned.S
+index e61aed5604..92365658b6 100644
+--- a/sysdeps/loongarch/lp64/multiarch/strchr-aligned.S
++++ b/sysdeps/loongarch/lp64/multiarch/strchr-aligned.S
+@@ -6,3 +6,5 @@
+ #endif
+ 
+ #include "../strchr.S"
++
++weak_alias (STRCHR_NAME, index)
+diff --git a/sysdeps/loongarch/lp64/multiarch/strchr.c b/sysdeps/loongarch/lp64/multiarch/strchr.c
+index 16d6f78f85..c6b069edfc 100644
+--- a/sysdeps/loongarch/lp64/multiarch/strchr.c
++++ b/sysdeps/loongarch/lp64/multiarch/strchr.c
+@@ -28,7 +28,7 @@
+ 
+ libc_ifunc_redirected (__redirect_strchr, __new_strchr,
+ 		       IFUNC_SELECTOR ());
+-
++weak_alias(__new_strchr, index)
+ # ifdef SHARED
+ __hidden_ver1 (__new_strchr, __GI_strchr, __redirect_strchr)
+   __attribute__ ((visibility ("hidden")));
+diff --git a/sysdeps/loongarch/lp64/multiarch/strrchr-aligned.S b/sysdeps/loongarch/lp64/multiarch/strrchr-aligned.S
+index 5ef09a81fa..a58ddde88a 100644
+--- a/sysdeps/loongarch/lp64/multiarch/strrchr-aligned.S
++++ b/sysdeps/loongarch/lp64/multiarch/strrchr-aligned.S
+@@ -6,3 +6,7 @@
+ #endif
+ 
+ #include "../strrchr.S"
++
++#undef rindex
++weak_alias(STRRCHR_NAME, rindex)
++
+diff --git a/sysdeps/loongarch/lp64/multiarch/strrchr.c b/sysdeps/loongarch/lp64/multiarch/strrchr.c
+index 4f1b0ec049..32eb6ea65e 100644
+--- a/sysdeps/loongarch/lp64/multiarch/strrchr.c
++++ b/sysdeps/loongarch/lp64/multiarch/strrchr.c
+@@ -28,7 +28,7 @@
+ 
+ libc_ifunc_redirected (__redirect_strrchr, __new_strrchr,
+ 		       IFUNC_SELECTOR ());
+-
++weak_alias(__new_strrchr, rindex)
+ # ifdef SHARED
+ __hidden_ver1 (__new_strrchr, __GI_strrchr, __redirect_strrchr)
+   __attribute__ ((visibility ("hidden")));
+diff --git a/sysdeps/loongarch/lp64/strchr.S b/sysdeps/loongarch/lp64/strchr.S
+index 0bd4264694..63454c1756 100644
+--- a/sysdeps/loongarch/lp64/strchr.S
++++ b/sysdeps/loongarch/lp64/strchr.S
+@@ -88,8 +88,3 @@ L(_mc8_a):
+ 
+ 	jr		ra
+ END(STRCHR_NAME)
+-
+-#ifdef _LIBC
+-weak_alias (STRCHR_NAME, index)
+-#endif
+-
+diff --git a/sysdeps/loongarch/lp64/strrchr.S b/sysdeps/loongarch/lp64/strrchr.S
+index 453e75062d..3bf92ecd80 100644
+--- a/sysdeps/loongarch/lp64/strrchr.S
++++ b/sysdeps/loongarch/lp64/strrchr.S
+@@ -102,7 +102,5 @@ L(found_end):
+ END(STRRCHR_NAME)
+ 
+ #ifdef _LIBC
+-#undef rindex
+-weak_alias(STRRCHR_NAME, rindex)
+ libc_hidden_builtin_def(STRRCHR_NAME)
+ #endif
+-- 
+2.20.1
+

@@ -1,0 +1,565 @@
+From 97a1f45a3db07095e7bbcb4d8af7317c434777d8 Mon Sep 17 00:00:00 2001
+From: caiyinyu <caiyinyu@loongson.cn>
+Date: Thu, 16 Feb 2023 19:57:25 +0800
+Subject: [PATCH 26/44] glibc-2.28: Add ifunc support for
+ strchr_{aligned,unaligned,lsx}
+
+Change-Id: I3b17c69a239ada3af295582b02b137d5f135cb2f
+---
+ sysdeps/loongarch/lp64/multiarch/Makefile     |   3 +-
+ .../lp64/multiarch/ifunc-impl-list.c          |   6 +
+ .../loongarch/lp64/multiarch/ifunc-strchr.h   |  37 +++++
+ .../loongarch/lp64/multiarch/strchr-aligned.S |   8 +
+ sysdeps/loongarch/lp64/multiarch/strchr-lsx.S |  63 +++++++
+ .../lp64/multiarch/strchr-unaligned.S         | 132 +++++++++++++++
+ sysdeps/loongarch/lp64/multiarch/strchr.c     |  39 +++++
+ sysdeps/loongarch/lp64/strchr.S               | 156 +++++++-----------
+ 8 files changed, 343 insertions(+), 101 deletions(-)
+ create mode 100644 sysdeps/loongarch/lp64/multiarch/ifunc-strchr.h
+ create mode 100644 sysdeps/loongarch/lp64/multiarch/strchr-aligned.S
+ create mode 100644 sysdeps/loongarch/lp64/multiarch/strchr-lsx.S
+ create mode 100644 sysdeps/loongarch/lp64/multiarch/strchr-unaligned.S
+ create mode 100644 sysdeps/loongarch/lp64/multiarch/strchr.c
+
+diff --git a/sysdeps/loongarch/lp64/multiarch/Makefile b/sysdeps/loongarch/lp64/multiarch/Makefile
+index 6ff946813d..a1ed9bfd42 100644
+--- a/sysdeps/loongarch/lp64/multiarch/Makefile
++++ b/sysdeps/loongarch/lp64/multiarch/Makefile
+@@ -5,5 +5,6 @@ sysdep_routines += memcpy-aligned memcpy-unaligned memcpy-lasx \
+ 		   memchr-aligned memchr-lsx \
+ 		   memrchr-generic memrchr-lsx \
+ 		   memcmp-aligned memcmp-lsx \
+-		   rawmemchr-aligned rawmemchr-lsx
++		   rawmemchr-aligned rawmemchr-lsx \
++		   strchr-aligned strchr-unaligned strchr-lsx
+ endif
+diff --git a/sysdeps/loongarch/lp64/multiarch/ifunc-impl-list.c b/sysdeps/loongarch/lp64/multiarch/ifunc-impl-list.c
+index 7f31e00f18..6ef20e8949 100644
+--- a/sysdeps/loongarch/lp64/multiarch/ifunc-impl-list.c
++++ b/sysdeps/loongarch/lp64/multiarch/ifunc-impl-list.c
+@@ -75,6 +75,12 @@ __libc_ifunc_impl_list (const char *name, struct libc_ifunc_impl *array,
+ 	      IFUNC_IMPL_ADD (array, i, rawmemchr, 1, __rawmemchr_aligned)
+ 	      )
+ 
++  IFUNC_IMPL (i, name, strchr,
++	      IFUNC_IMPL_ADD (array, i, strchr, 1, __strchr_lsx)
++	      IFUNC_IMPL_ADD (array, i, strchr, 1, __strchr_aligned)
++	      IFUNC_IMPL_ADD (array, i, strchr, 1, __strchr_unaligned)
++	      )
++
+   return i;
+ }
+ 
+diff --git a/sysdeps/loongarch/lp64/multiarch/ifunc-strchr.h b/sysdeps/loongarch/lp64/multiarch/ifunc-strchr.h
+new file mode 100644
+index 0000000000..771312f663
+--- /dev/null
++++ b/sysdeps/loongarch/lp64/multiarch/ifunc-strchr.h
+@@ -0,0 +1,37 @@
++/* Common definition for strchr implementation.
++   All versions must be listed in ifunc-impl-list.c.
++   Copyright (C) 2017-2022 Free Software Foundation, Inc.
++   This file is part of the GNU C Library.
++
++   The GNU C Library is free software; you can redistribute it and/or
++   modify it under the terms of the GNU Lesser General Public
++   License as published by the Free Software Foundation; either
++   version 2.1 of the License, or (at your option) any later version.
++
++   The GNU C Library is distributed in the hope that it will be useful,
++   but WITHOUT ANY WARRANTY; without even the implied warranty of
++   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++   Lesser General Public License for more details.
++
++   You should have received a copy of the GNU Lesser General Public
++   License along with the GNU C Library; if not, see
++   <https://www.gnu.org/licenses/>.  */
++
++#include <init-arch.h>
++
++extern __typeof (REDIRECT_NAME) OPTIMIZE (lsx) attribute_hidden;
++extern __typeof (REDIRECT_NAME) OPTIMIZE (aligned) attribute_hidden;
++extern __typeof (REDIRECT_NAME) OPTIMIZE (unaligned) attribute_hidden;
++
++static inline void *
++IFUNC_SELECTOR (void)
++{
++  INIT_ARCH();
++
++  if (SUPPORT_LSX)
++    return OPTIMIZE (lsx);
++  if (SUPPORT_UAL)
++    return OPTIMIZE (unaligned);
++  else
++    return OPTIMIZE (aligned);
++}
+diff --git a/sysdeps/loongarch/lp64/multiarch/strchr-aligned.S b/sysdeps/loongarch/lp64/multiarch/strchr-aligned.S
+new file mode 100644
+index 0000000000..e61aed5604
+--- /dev/null
++++ b/sysdeps/loongarch/lp64/multiarch/strchr-aligned.S
+@@ -0,0 +1,8 @@
++
++#if IS_IN (libc)
++
++#define STRCHR_NAME __strchr_aligned
++
++#endif
++
++#include "../strchr.S"
+diff --git a/sysdeps/loongarch/lp64/multiarch/strchr-lsx.S b/sysdeps/loongarch/lp64/multiarch/strchr-lsx.S
+new file mode 100644
+index 0000000000..df63fa9a12
+--- /dev/null
++++ b/sysdeps/loongarch/lp64/multiarch/strchr-lsx.S
+@@ -0,0 +1,63 @@
++#ifdef _LIBC
++#include <sysdep.h>
++#include <sys/regdef.h>
++#include <sys/asm.h>
++#else
++#include <sys/asm.h>
++#include <sys/regdef.h>
++#endif
++
++#if IS_IN (libc)
++
++#ifndef AS_STRCHRNUL
++#define STRCHR_NAME __strchr_lsx
++#endif
++
++LEAF(STRCHR_NAME)
++    .align          6
++    andi            t1, a0, 0xf
++    bstrins.d       a0, zero, 3, 0
++    vld             $vr0, a0, 0
++    li.d            t2, -1
++
++    vreplgr2vr.b    $vr1, a1
++    sll.d           t3, t2, t1
++    vxor.v          $vr2, $vr0, $vr1
++    vmin.bu         $vr0, $vr0, $vr2
++
++    vmsknz.b        $vr0, $vr0
++    movfr2gr.s      t0, $f0
++    ext.w.h         t0, t0
++    orn             t0, t0, t3
++
++    beq             t0, t2, L(loop)
++L(found):
++    cto.w           t0, t0
++    add.d           a0, a0, t0
++#ifndef AS_STRCHRNUL
++    vreplve.b       $vr2, $vr2, t0
++    vpickve2gr.bu   t1, $vr2, 0
++    masknez         a0, a0, t1
++#endif
++    jr              ra
++
++
++L(loop):
++    vld             $vr0, a0, 16
++    addi.d          a0, a0, 16
++    vxor.v          $vr2, $vr0, $vr1
++    vmin.bu         $vr0, $vr0, $vr2
++
++    vsetanyeqz.b    $fcc0, $vr0
++    bceqz           $fcc0, L(loop)
++    vmsknz.b        $vr0, $vr0
++    movfr2gr.s      t0, $f0
++
++    b               L(found)
++END(STRCHR_NAME)
++
++#ifndef AS_STRCHRNUL
++libc_hidden_builtin_def (STRCHR_NAME)
++#endif
++
++#endif
+diff --git a/sysdeps/loongarch/lp64/multiarch/strchr-unaligned.S b/sysdeps/loongarch/lp64/multiarch/strchr-unaligned.S
+new file mode 100644
+index 0000000000..1d5e56c5cf
+--- /dev/null
++++ b/sysdeps/loongarch/lp64/multiarch/strchr-unaligned.S
+@@ -0,0 +1,132 @@
++/* Copyright 2016 Loongson Technology Corporation Limited  */
++
++/* Author: songyuekun songyuekun@loongson.cn */
++
++/* basic algorithm :
++	+. use ld.d and mask for the first 8 bytes or less;
++	+. build a1 with 8c with dins;
++	+. use xor from a1 and v0 to check if is found;
++	+. if (v0 - 0x0101010101010101) & (~(v0 | 0x7f7f7f7f7f7f7f7f)!= 0, v0 has
++	one byte is \0, else has no \0
++*/
++
++#ifdef _LIBC
++#include <sysdep.h>
++#include <sys/regdef.h>
++#include <sys/asm.h>
++#else
++#include <sys/asm.h>
++#include <sys/regdef.h>
++#endif
++
++
++#if IS_IN (libc)
++
++#define L_ADDIU  addi.d
++#define L_ADDU   add.d
++#define L_SUBU   sub.d
++
++#define MOVN(rd,rs,rt) \
++	maskeqz t6, rs, rt;\
++	masknez rd, rd, rt;\
++	or	rd, rd, t6
++
++#define MOVN2(rd,rt) \
++	masknez rd, rd, rt;\
++	or	rd, rd, rt
++
++#define STRCHR_NAME __strchr_unaligned
++
++/* char * strchr (const char *s1, int c); */
++LEAF(STRCHR_NAME)
++	.align		6
++
++	li.w		t4, 0x7
++	lu12i.w		a2, 0x01010
++	bstrins.d	a1, a1, 15, 8
++	andi		t0, a0, 0x7
++
++	ori		a2, a2, 0x101
++	andn		t4, a0, t4
++	slli.w		t1, t0, 3
++
++	ld.d		t4, t4, 0
++
++
++	nor		t8, zero, zero
++	bstrins.d	a1, a1, 31, 16
++	srl.d		t4, t4, t1
++
++	bstrins.d	a1, a1, 63, 32
++	bstrins.d	a2, a2, 63, 32
++	srl.d		a7, t8, t1
++
++	li.w		t1, 8
++	nor		t8, a7, zero
++	slli.d		a3, a2, 7
++	or		t5, t8, t4
++	and		t3, a7, a1
++
++	sub.w		t1, t1, t0
++	nor		a3, a3, zero
++	xor		t2, t5, t3
++	sub.d		a7, t5, a2
++	nor		a6, t5, a3
++
++	sub.d		a5, t2, a2
++	nor		a4, t2, a3
++
++    	and         	a6, a7, a6
++    	and         	a5, a5, a4
++    	or          	a7, a6, a5
++	bnez		a7, L(_mc8_a)
++
++	L_ADDU		a0, a0, t1
++L(_aloop):
++	ld.d		t4, a0, 0
++
++	xor		t2, t4, a1
++	sub.d		a7, t4, a2
++	nor		a6, t4, a3
++	sub.d		a5, t2, a2
++
++	nor		a4, t2, a3
++    	and         	a6, a7, a6
++    	and         	a5, a5, a4
++    	or          	a7, a6, a5
++	bnez		a7, L(_mc8_a)
++
++	ld.d		t4, a0, 8
++	L_ADDIU		a0, a0, 16
++	xor		t2, t4, a1
++	sub.d		a7, t4, a2
++	nor		a6, t4, a3
++	sub.d		a5, t2, a2
++
++	nor		a4, t2, a3
++    	and         	a6, a7, a6
++    	and         	a5, a5, a4
++    	or          	a7, a6, a5
++	beqz		a7, L(_aloop)
++
++	L_ADDIU		a0, a0, -8
++L(_mc8_a):
++
++    	ctz.d       	t0, a5
++    	ctz.d       	t2, a6
++
++	srli.w		t0, t0, 3
++	srli.w		t2, t2, 3
++	sltu		t1, t2, t0
++	L_ADDU		v0, a0, t0
++	masknez     v0, v0, t1
++	jr		ra
++END(STRCHR_NAME)
++
++#ifndef ANDROID_CHANGES
++#ifdef _LIBC
++libc_hidden_builtin_def (STRCHR_NAME)
++#endif
++#endif
++
++#endif
+diff --git a/sysdeps/loongarch/lp64/multiarch/strchr.c b/sysdeps/loongarch/lp64/multiarch/strchr.c
+new file mode 100644
+index 0000000000..cdaa1904b7
+--- /dev/null
++++ b/sysdeps/loongarch/lp64/multiarch/strchr.c
+@@ -0,0 +1,39 @@
++/* Multiple versions of strchr.
++   All versions must be listed in ifunc-impl-list.c.
++   Copyright (C) 2017-2022 Free Software Foundation, Inc.
++   This file is part of the GNU C Library.
++
++   The GNU C Library is free software; you can redistribute it and/or
++   modify it under the terms of the GNU Lesser General Public
++   License as published by the Free Software Foundation; either
++   version 2.1 of the License, or (at your option) any later version.
++
++   The GNU C Library is distributed in the hope that it will be useful,
++   but WITHOUT ANY WARRANTY; without even the implied warranty of
++   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++   Lesser General Public License for more details.
++
++   You should have received a copy of the GNU Lesser General Public
++   License along with the GNU C Library; if not, see
++   <https://www.gnu.org/licenses/>.  */
++
++/* Define multiple versions only for the definition in libc.  */
++#if IS_IN (libc)
++# define strchr __redirect_strchr
++# include <string.h>
++# undef strchr
++
++# define SYMBOL_NAME strchr
++# include "ifunc-strchr.h"
++
++libc_ifunc_redirected (__redirect_strchr, __new_strchr,
++		       IFUNC_SELECTOR ());
++
++# ifdef SHARED
++__hidden_ver1 (__new_strchr, __GI_strchr, __redirect_strchr)
++  __attribute__ ((visibility ("hidden")));
++# endif
++
++# include <shlib-compat.h>
++versioned_symbol (libc, __new_strchr, strchr, GLIBC_2_27);
++#endif
+diff --git a/sysdeps/loongarch/lp64/strchr.S b/sysdeps/loongarch/lp64/strchr.S
+index 872101db63..caaacca57c 100644
+--- a/sysdeps/loongarch/lp64/strchr.S
++++ b/sysdeps/loongarch/lp64/strchr.S
+@@ -1,140 +1,96 @@
+-/* Copyright 2016 Loongson Technology Corporation Limited  */
+-
+-/* Author: songyuekun songyuekun@loongson.cn */
+-
+-/*
+- * ISA: MIPS64R2
+- * ABI: N64
+- */
+-
+-/* basic algorithm :
+-
+-	+. 	use ld.d and mask for the first 8 bytes or less;
+-
+-	+.	build a1 with 8c with dins;
+-
+-	+.	use xor from a1 and v0 to check if is found;
+-
+-	+.	if (v0 - 0x0101010101010101) & (~(v0 | 0x7f7f7f7f7f7f7f7f)!= 0, v0 has
+-		one byte is \0, else has no \0
+-
+-*/
+-
+-
+-
+-
++#ifdef _LIBC
+ #include <sysdep.h>
++#include <sys/regdef.h>
+ #include <sys/asm.h>
++#else
++#include <sys/asm.h>
++#include <sys/regdef.h>
++#endif
+ 
+-
+-
+-
+-
+-#define L_ADDIU  addi.d
+-#define L_ADDU   add.d
+-#define L_SUBU   sub.d
+-
+-#define STRCHR	strchr
+-#define MOVN(rd,rs,rt) \
+-	maskeqz t6, rs, rt;\
+-	masknez rd, rd, rt;\
+-	or	rd, rd, t6
+-
+-#define MOVN2(rd,rt) \
+-	masknez rd, rd, rt;\
+-	or	rd, rd, rt
+-
++#ifndef STRCHR_NAME
++#define STRCHR_NAME strchr
++#endif
+ 
+ /* char * strchr (const char *s1, int c); */
+ 
+-LEAF(STRCHR)
++LEAF(STRCHR_NAME)
+ 	.align		6
+-
+-	li.w		t4, 0x7
++	slli.d		t1, a0, 3
++	bstrins.d	a0, zero, 2, 0
+ 	lu12i.w		a2, 0x01010
+-	bstrins.d	a1, a1, 15, 8
+-	andi		t0, a0, 0x7
++	ld.d		t2, a0, 0
+ 
+ 	ori		a2, a2, 0x101
+-	andn		t4, a0, t4
+-	slli.w		t1, t0, 3
+-
+-	ld.d		t4, t4, 0
+-
+-
+-	nor		t8, zero, zero
+-	bstrins.d	a1, a1, 31, 16
+-	srl.d		t4, t4, t1
+-
+-	bstrins.d	a1, a1, 63, 32
++	andi		a1, a1, 0xff
+ 	bstrins.d	a2, a2, 63, 32
+-	srl.d		a7, t8, t1
++	li.w		t0, -1
+ 
+-	li.w		t1, 8
+-	nor		t8, a7, zero
+-	slli.d		a3, a2, 7
+-	or		t5, t8, t4
+-	and		t3, a7, a1
++	mul.d           a1, a1, a2 # "cccccccc"
++	sll.d		t0, t0, t1
++	slli.d		a3, a2, 7  # 0x8080808080808080
++	orn             t2, t2, t0
+ 
+-	sub.w		t1, t1, t0
+-	nor		a3, a3, zero
+-	xor		t2, t5, t3
+-	sub.d		a7, t5, a2
+-	nor		a6, t5, a3
++	sll.d           t3, a1, t1
++	xor             t4, t2, t3
++	sub.d           a7, t2, a2
++	andn            a6, a3, t2
+ 
+-	sub.d		a5, t2, a2
+-	nor		a4, t2, a3
+ 
+-    and         a6, a7, a6
+-    and         a5, a5, a4
+-    or          a7, a6, a5
+-	bnez		a7, L(_mc8_a)
++	sub.d           a5, t4, a2
++	andn            a4, a3, t4
++	and		a6, a7, a6
++	and		a5, a5, a4
+ 
+-	L_ADDU		a0, a0, t1
++	or		t0, a6, a5
++	bnez		t0, L(_mc8_a)
++	addi.d		a0, a0, 8
+ L(_aloop):
+ 	ld.d		t4, a0, 0
+ 
+ 	xor		t2, t4, a1
+ 	sub.d		a7, t4, a2
+-	nor		a6, t4, a3
++	andn		a6, a3, t4
+ 	sub.d		a5, t2, a2
+ 
+-	nor		a4, t2, a3
+-    and         a6, a7, a6
+-    and         a5, a5, a4
+-    or          a7, a6, a5
+-	bnez		a7, L(_mc8_a)
++	andn		a4, a3, t2
++	and		a6, a7, a6
++	and		a5, a5, a4
++	or		a7, a6, a5
++
+ 
++	bnez		a7, L(_mc8_a)
+ 	ld.d		t4, a0, 8
+-	L_ADDIU		a0, a0, 16
++	addi.d		a0, a0, 16
+ 	xor		t2, t4, a1
++
+ 	sub.d		a7, t4, a2
+-	nor		a6, t4, a3
++	andn		a6, a3, t4
+ 	sub.d		a5, t2, a2
++	andn		a4, a3, t2
+ 
+-	nor		a4, t2, a3
+-    and         a6, a7, a6
+-    and         a5, a5, a4
+-    or          a7, a6, a5
++	and		a6, a7, a6
++	and		a5, a5, a4
++	or		a7, a6, a5
+ 	beqz		a7, L(_aloop)
+ 
+-	L_ADDIU		a0, a0, -8
++	addi.d		a0, a0, -8
++
+ L(_mc8_a):
++	ctz.d		t0, a5
++	ctz.d		t2, a6
++	srli.w		t0, t0, 3
+ 
+-    ctz.d       t0, a5
+-    ctz.d       t2, a6
+ 
+-	srli.w		t0, t0, 3
+ 	srli.w		t2, t2, 3
+ 	sltu		t1, t2, t0
+-	L_ADDU		v0, a0, t0
+-    masknez     v0, v0, t1
++	add.d		a0, a0, t0
++	masknez		a0, a0, t1
++
+ 	jr		ra
+-END(STRCHR)
++END(STRCHR_NAME)
+ 
+-#ifndef ANDROID_CHANGES
+ #ifdef _LIBC
+-libc_hidden_builtin_def (strchr)
+-weak_alias (strchr, index)
+-#endif
++libc_hidden_builtin_def (STRCHR_NAME)
++weak_alias (STRCHR_NAME, index)
+ #endif
++
+-- 
+2.20.1
+

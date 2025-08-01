@@ -1,0 +1,204 @@
+From 5c4b16af5a0cb70f26ade39f2c98b6f98899aed1 Mon Sep 17 00:00:00 2001
+From: caiyinyu <caiyinyu@loongson.cn>
+Date: Wed, 15 Feb 2023 15:54:38 +0800
+Subject: [PATCH 18/44] glibc-2.28: Delete useless codes and format codes.
+
+Change-Id: I769b9494612b7a6f0e4fb19d824c7f38b71a5761
+---
+ sysdeps/loongarch/lp64/memcpy.S  |  4 ---
+ sysdeps/loongarch/lp64/memset.S  |  4 ---
+ sysdeps/loongarch/lp64/strlen.S  | 60 +++++++++++---------------------
+ sysdeps/loongarch/lp64/strnlen.S |  2 +-
+ 4 files changed, 21 insertions(+), 49 deletions(-)
+
+diff --git a/sysdeps/loongarch/lp64/memcpy.S b/sysdeps/loongarch/lp64/memcpy.S
+index f699e02031..1076e678ea 100644
+--- a/sysdeps/loongarch/lp64/memcpy.S
++++ b/sysdeps/loongarch/lp64/memcpy.S
+@@ -15,10 +15,6 @@
+ #define MEMMOVE_NAME memmove
+ #endif
+ 
+-#ifndef L
+-#define L(label) .L ## label
+-#endif
+-
+ #define LD_64(reg, n)          \
+     ld.d        t0, reg, n;    \
+     ld.d        t1, reg, n+8;  \
+diff --git a/sysdeps/loongarch/lp64/memset.S b/sysdeps/loongarch/lp64/memset.S
+index c0063f4463..9fe42b24de 100644
+--- a/sysdeps/loongarch/lp64/memset.S
++++ b/sysdeps/loongarch/lp64/memset.S
+@@ -11,10 +11,6 @@
+ #define MEMSET_NAME memset
+ #endif
+ 
+-#ifndef L
+-#define L(label) .L ## label
+-#endif
+-
+ #define ST_64(n)                \
+     st.d        a1, a0, n;      \
+     st.d        a1, a0, n+8;    \
+diff --git a/sysdeps/loongarch/lp64/strlen.S b/sysdeps/loongarch/lp64/strlen.S
+index a34d8b6940..e017f9a609 100644
+--- a/sysdeps/loongarch/lp64/strlen.S
++++ b/sysdeps/loongarch/lp64/strlen.S
+@@ -1,54 +1,37 @@
+-/* Copyright 2016 Loongson Technology Corporation Limited  */
++/* Copyright 2016 Loongson Technology Corporation Limited.  */
+ 
+-/* Author: Songyuekun songyuekun@loongson.cn */
++/* Author: Songyuekun songyuekun@loongson.cn.  */
+ 
+-/*
+- * ISA: MIPS64R2
+- * ABI: N64
+- */
+-/*
+-algorithm:
+-
+-	#.	use ld/ldr to access word/partial word in the string
+-
+-	#.	use (x - 0x0101010101010101) & (~(x | 0x7f7f7f7f7f7f7f7f) != 0 to
+-	judge if x has zero byte
+-
+-	#.	use dctz((x - 0x0101010101010101) & (~(x | 0x7f7f7f7f7f7f7f7f) >> 3
+-		to get the index of first rightmost zero byte in dword x;
+-
+-	#.	use dctz(x) = 64 - dclz(~x & (x-1));
+-
+-	#.	use pointer to the last non zero byte  minus pointer to the start
+-	of the string to get the length of string
+-
+-*/
++/* algorithm:
++  #. use ld/ldr to access word/partial word in the string
++  #. use (x - 0x0101010101010101) & (~(x | 0x7f7f7f7f7f7f7f7f) != 0 to
++     judge if x has zero byte
++  #. use dctz((x - 0x0101010101010101) & (~(x | 0x7f7f7f7f7f7f7f7f) >> 3
++     to get the index of first rightmost zero byte in dword x;
++  #. use dctz(x) = 64 - dclz(~x & (x-1));
++  #. use pointer to the last non zero byte minus pointer to the start
++     of the string to get the length of string.  */
+ 
+ 
+ #include <sysdep.h>
+ #include <sys/asm.h>
+ 
+-
+-
+ #define L_ADDIU  addi.d
+ #define L_ADDU   add.d
+ #define L_SUBU   sub.d
+ 
+ #define STRLEN	strlen
+-#define L(x)	x
+-
+ 
+ /* size_t strlen (const char *s1); */
+ 
+ 	.text;
+-    .globl	strlen;
++	.globl	strlen;
+ 	.align		5;
+ 	cfi_startproc ;
+ 	.type	strlen, @function;
+ strlen:
+ 
+     //LEAF(strlen)
+-    #preld       0, a0, 0
+ 
+ 	nor		t4, zero, zero
+ 	lu12i.w		a2, 0x01010
+@@ -60,16 +43,14 @@ strlen:
+ 	ld.d		a1, t7, 0
+ 	sub.d		t7, zero, t6
+ 	sll.d		t4, t4, t7
+-    maskeqz     t4, t4, t6
++	maskeqz		t4, t4, t6
+ 	srl.d		a1, a1, t6
+ 	or		a1, a1, t4
+ 
+-
+ 	ori		a2, a2, 0x101
+ 	nor		t1, a1, zero
+ 	li.w		a4, 8
+ 
+-    #preld       0, a0, 32
+ 	bstrins.d	a2, a2, 63, 32
+ 	sub.d		a5, a4, t5
+ 	move		t5, a0
+@@ -80,13 +61,12 @@ strlen:
+ 	nor		t1, a1, a3
+ 
+ 	and		t0, t0, t1
+-    #preld       0, a0, 64
+ 	bnez		t0, strlen_count1	/* instead of use bnel with daddu a0, a0, a5 in branch slot */
+ 	L_ADDU		a0, a0, a5
+ strlen_loop:
+ 	ld.d		a1, a0, 0
+ 	sub.d		t0, a1, a2
+-    and         t1, t0, t4
++	and		t1, t0, t4
+ 	bnez		t1, strlen_count_pre
+ 	ld.d		a1, a0, 8
+ 	sub.d		t0, a1, a2
+@@ -94,11 +74,11 @@ strlen_loop:
+ 	L_ADDIU		a0, a0, 16
+ 	beqz		t1, strlen_loop
+ strlen_count:
+-    addi.d      a0, a0, -8
++	addi.d      	a0, a0, -8
+ strlen_count_pre:
+-    nor         t1, a1, a3
+-    and         t0, t0, t1
+-    beqz        t0, strlen_noascii_start
++	nor         	t1, a1, a3
++    	and         	t0, t0, t1
++    	beqz        	t0, strlen_noascii_start
+ strlen_count1:
+ 	ctz.d		t1, t0
+ 	L_SUBU		v0, a0, t5
+@@ -106,7 +86,7 @@ strlen_count1:
+ 	L_ADDU		v0, v0, t1
+ 	jr		ra
+ strlen_noascii_start:
+-    addi.d      a0, a0, 8
++	addi.d		a0, a0, 8
+ strlen_loop_noascii:
+ 	ld.d		a1, a0, 0
+ 	sub.d		t0, a1, a2
+@@ -119,7 +99,7 @@ strlen_loop_noascii:
+ 	and		t0, t0, t1
+ 	L_ADDIU		a0, a0, 16
+ 	beqz		t0, strlen_loop_noascii
+-    addi.d      a0, a0, -8
++	addi.d		a0, a0, -8
+ 	ctz.d		t1, t0
+ 	L_SUBU		v0, a0, t5
+ 	srli.w		t1, t1, 3
+diff --git a/sysdeps/loongarch/lp64/strnlen.S b/sysdeps/loongarch/lp64/strnlen.S
+index 3a2046869b..349716f031 100644
+--- a/sysdeps/loongarch/lp64/strnlen.S
++++ b/sysdeps/loongarch/lp64/strnlen.S
+@@ -24,6 +24,7 @@ algorithm:
+ 
+ */
+ 
++#include <sysdep.h>
+ #include <sys/asm.h>
+ #include <sys/regdef.h>
+ 
+@@ -34,7 +35,6 @@ algorithm:
+ #define L_SUBU   sub.d
+ 
+ #define STRNLEN	__strnlen
+-#define L(x)	x
+ /* rd <- if rc then ra else rb
+     will destroy t6
+ */
+-- 
+2.20.1
+

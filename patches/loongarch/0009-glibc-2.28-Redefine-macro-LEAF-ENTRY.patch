@@ -1,0 +1,56 @@
+From 29c7edc85f8e65b96c1a63df750a47bed2c292ff Mon Sep 17 00:00:00 2001
+From: caiyinyu <caiyinyu@loongson.cn>
+Date: Sun, 25 Jun 2023 16:23:25 +0800
+Subject: [PATCH 9/9] glibc-2.28: Redefine macro LEAF/ENTRY.
+
+    The following usage of macro LEAF/ENTRY are all feasible:
+    1. LEAF(fcn) -- the align value of fcn is .align 3 (default value)
+    2. LEAF(fcn, 6) -- the align value of fcn is .align 6
+
+Change-Id: Ie3df4df8dba5259b665bd0e4702aaab0a09a5f65
+---
+ sysdeps/loongarch/sys/asm.h | 15 ++++++++++-----
+ 1 file changed, 10 insertions(+), 5 deletions(-)
+
+diff --git a/sysdeps/loongarch/sys/asm.h b/sysdeps/loongarch/sys/asm.h
+index 357a5ba373..734e45aed9 100644
+--- a/sysdeps/loongarch/sys/asm.h
++++ b/sysdeps/loongarch/sys/asm.h
+@@ -26,16 +26,21 @@
+ #endif
+ 
+ 
+-/* Declare leaf routine.  */
+-#define	LEAF(symbol, aln)		\
++/*  Declare leaf routine.
++    The usage of macro LEAF/ENTRY is as follows:
++    1. LEAF(fcn) -- the align value of fcn is .align 3 (default value)
++    2. LEAF(fcn, 6) -- the align value of fcn is .align 6
++*/
++#define	LEAF_IMPL(symbol, aln, ...)	\
+ 	.text;				\
+ 	.globl	symbol;			\
+ 	.align	aln;			\
+ 	.type	symbol, @function;	\
+ symbol: \
+-	cfi_startproc;			\
++	cfi_startproc;
+ 
+-# define ENTRY(symbol, aln) LEAF(symbol, aln)
++#define LEAF(...) LEAF_IMPL(__VA_ARGS__, 3)
++#define ENTRY(...) LEAF(__VA_ARGS__)
+ 
+ #define	LEAF_NO_ALIGN(symbol)			\
+ 	.text;				\
+@@ -44,7 +49,7 @@ symbol: \
+ symbol: \
+ 	cfi_startproc;
+ 
+-# define ENTRY_NO_ALIGN(symbol) LEAF_NO_ALIGN(symbol)
++#define ENTRY_NO_ALIGN(symbol) LEAF_NO_ALIGN(symbol)
+ 
+ /* Mark end of function.  */
+ #undef END
+-- 
+2.40.1
+

@@ -1,0 +1,61 @@
+From b2990f279b0e55f94b89b84b67b75bf227be18dd Mon Sep 17 00:00:00 2001
+From: caiyinyu <caiyinyu@loongson.cn>
+Date: Tue, 11 Apr 2023 19:33:28 +0800
+Subject: [PATCH 2/2] glibc-2.28: use latest strchr-lasx.S
+
+Change-Id: Ib2b0565cae935eec878e4fbe31245733adb4d034
+---
+ sysdeps/loongarch/lp64/multiarch/strchr-lasx.S | 17 +++++++++++++++--
+ 1 file changed, 15 insertions(+), 2 deletions(-)
+
+diff --git a/sysdeps/loongarch/lp64/multiarch/strchr-lasx.S b/sysdeps/loongarch/lp64/multiarch/strchr-lasx.S
+index 61186aa251..ea7eb9d2d6 100644
+--- a/sysdeps/loongarch/lp64/multiarch/strchr-lasx.S
++++ b/sysdeps/loongarch/lp64/multiarch/strchr-lasx.S
+@@ -32,21 +32,33 @@ LEAF(STRCHR)
+ 
+     orn             t0, t0, t1
+     bne             t0, t2, L(end)
+-L(loop):
+-    xvld            $xr0, a0, 32
+     addi.d          a0, a0, 32
++    nop
++
+ 
++L(loop):
++    xvld            $xr0, a0, 0
++    xvxor.v         $xr2, $xr0, $xr1
++    xvmin.bu        $xr0, $xr0, $xr2
++    xvsetanyeqz.b   $fcc0, $xr0
+ 
++    bcnez           $fcc0, L(loop_end)
++    xvld            $xr0, a0, 32
++    addi.d          a0, a0, 64
+     xvxor.v         $xr2, $xr0, $xr1
++
+     xvmin.bu        $xr0, $xr0, $xr2
+     xvsetanyeqz.b   $fcc0, $xr0
+     bceqz           $fcc0, L(loop)
++    addi.d          a0, a0, -32
+ 
++L(loop_end):
+     xvmsknz.b       $xr0, $xr0
+     xvpickve.w      $xr1, $xr0, 4
+     vilvl.h         $vr0, $vr1, $vr0
+     movfr2gr.s      t0, $f0
+ 
++
+ L(end):
+     cto.w           t0, t0
+     add.d           a0, a0, t0
+@@ -59,6 +71,7 @@ L(end):
+     masknez         a0, a0, t0
+ #endif
+     jr              ra
++
+ END(STRCHR)
+ 
+ #ifdef _LIBC
+-- 
+2.20.1
+

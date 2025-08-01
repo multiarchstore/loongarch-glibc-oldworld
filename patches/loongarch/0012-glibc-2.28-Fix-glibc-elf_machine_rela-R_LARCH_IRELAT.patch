@@ -1,0 +1,28 @@
+From 38408cb8ba61ce35d336aa350a260bbdf7183bde Mon Sep 17 00:00:00 2001
+From: caiyinyu <caiyinyu@loongson.cn>
+Date: Sun, 15 Jan 2023 15:27:28 +0800
+Subject: [PATCH 12/44] glibc-2.28: Fix glibc elf_machine_rela
+ R_LARCH_IRELATIVE
+
+Change-Id: I9ebd9be3e09b1b781c8ae6425c25c3f7e8b21d01
+---
+ sysdeps/loongarch/dl-machine.h | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/sysdeps/loongarch/dl-machine.h b/sysdeps/loongarch/dl-machine.h
+index 2a5e3767dc..1918df4e9e 100644
+--- a/sysdeps/loongarch/dl-machine.h
++++ b/sysdeps/loongarch/dl-machine.h
+@@ -286,7 +286,8 @@ elf_machine_rela (struct link_map *map, const ElfW(Rela) *reloc,
+ 
+     case R_LARCH_IRELATIVE:
+       value = map->l_addr + reloc->r_addend;
+-      value = ((ElfW(Addr) (*) (void)) value) ();
++      if (__glibc_likely (!skip_ifunc))
++	value = ((ElfW(Addr) (*) (void)) value) ();
+       *addr_field = value;
+       break;
+ 
+-- 
+2.20.1
+

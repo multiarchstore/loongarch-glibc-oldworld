@@ -1,0 +1,37 @@
+From 5037740c592360f088719099cac330e144d4f629 Mon Sep 17 00:00:00 2001
+From: caiyinyu <caiyinyu@loongson.cn>
+Date: Wed, 27 Apr 2022 09:44:59 +0800
+Subject: [PATCH] glibc-2.28: Fix tst-cancel21.c to suit kernel struct
+ sigcontext change.
+
+	*   nptl/tst-cancel21.c
+
+Change-Id: Idaa84ec5f67da4e13501de68370a9e7aa7c31c4c
+---
+ nptl/tst-cancel21.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/nptl/tst-cancel21.c b/nptl/tst-cancel21.c
+index b10fdbc136..a3653f2166 100644
+--- a/nptl/tst-cancel21.c
++++ b/nptl/tst-cancel21.c
+@@ -217,14 +217,14 @@ static int
+ do_test (void)
+ {
+   stack_t ss;
+-  ss.ss_sp = malloc (2 * SIGSTKSZ);
++  ss.ss_sp = malloc (4 * SIGSTKSZ);
+   if (ss.ss_sp == NULL)
+     {
+       puts ("failed to allocate alternate stack");
+       return 1;
+     }
+   ss.ss_flags = 0;
+-  ss.ss_size = 2 * SIGSTKSZ;
++  ss.ss_size = 4 * SIGSTKSZ;
+   if (sigaltstack (&ss, NULL) < 0)
+     {
+       printf ("sigaltstack failed %m\n");
+-- 
+2.20.1
+

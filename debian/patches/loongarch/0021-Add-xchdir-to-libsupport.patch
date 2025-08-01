@@ -1,0 +1,74 @@
+From b056e90f2d0b61528e0b15a86ee0b65429d22b53 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Alexandra=20H=C3=A1jkov=C3=A1?= <ahajkova@redhat.com>
+Date: Sat, 26 Dec 2020 18:45:13 +0100
+Subject: [PATCH 21/22] Add xchdir to libsupport.
+
+Change-Id: Id17e0564302a0a987927728c15e4c0337b919269
+---
+ support/Makefile  |  1 +
+ support/xchdir.c  | 28 ++++++++++++++++++++++++++++
+ support/xunistd.h |  1 +
+ 3 files changed, 30 insertions(+)
+ create mode 100644 support/xchdir.c
+
+diff --git a/support/Makefile b/support/Makefile
+index 81e4d817a0..e80f23007c 100644
+--- a/support/Makefile
++++ b/support/Makefile
+@@ -73,6 +73,7 @@ libsupport-routines = \
+   xasprintf \
+   xbind \
+   xcalloc \
++  xchdir \
+   xchroot \
+   xclone \
+   xclose \
+diff --git a/support/xchdir.c b/support/xchdir.c
+new file mode 100644
+index 0000000000..beb4feff72
+--- /dev/null
++++ b/support/xchdir.c
+@@ -0,0 +1,28 @@
++/* chdir with error checking.
++   Copyright (C) 2020 Free Software Foundation, Inc.
++   This file is part of the GNU C Library.
++
++   The GNU C Library is free software; you can redistribute it and/or
++   modify it under the terms of the GNU Lesser General Public
++   License as published by the Free Software Foundation; either
++   version 2.1 of the License, or (at your option) any later version.
++
++   The GNU C Library is distributed in the hope that it will be useful,
++   but WITHOUT ANY WARRANTY; without even the implied warranty of
++   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++   Lesser General Public License for more details.
++
++   You should have received a copy of the GNU Lesser General Public
++   License along with the GNU C Library; if not, see
++   <https://www.gnu.org/licenses/>.  */
++
++#include <support/check.h>
++#include <support/xunistd.h>
++#include <unistd.h>
++
++void
++xchdir (const char *path)
++{
++  if (chdir (path) != 0)
++    FAIL_EXIT1 ("chdir (\"%s\"): %m", path);
++}
+diff --git a/support/xunistd.h b/support/xunistd.h
+index 5fe5dae818..a72f38733c 100644
+--- a/support/xunistd.h
++++ b/support/xunistd.h
+@@ -43,6 +43,7 @@ void xunlink (const char *path);
+ long xsysconf (int name);
+ long long xlseek (int fd, long long offset, int whence);
+ void xftruncate (int fd, long long length);
++void xchdir (const char *path);
+ 
+ /* Read the link at PATH.  The caller should free the returned string
+    with free.  */
+-- 
+2.20.1
+

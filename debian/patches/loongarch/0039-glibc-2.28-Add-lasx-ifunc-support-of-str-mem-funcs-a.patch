@@ -1,0 +1,2903 @@
+From 42634c051cf74775862ebde3cd7518c09ca8e6c7 Mon Sep 17 00:00:00 2001
+From: caiyinyu <caiyinyu@loongson.cn>
+Date: Thu, 2 Mar 2023 17:53:40 +0800
+Subject: [PATCH 39/44] glibc-2.28: Add lasx ifunc support of str/mem funcs and
+ adjust related code
+
+Change-Id: Iab88cbc212e2f22cba509f6fab4650f6d49af011
+---
+ sysdeps/loongarch/lp64/multiarch/Makefile     |  22 +-
+ .../lp64/multiarch/ifunc-impl-list.c          |  12 +-
+ .../loongarch/lp64/multiarch/ifunc-memchr.h   |   5 +-
+ .../loongarch/lp64/multiarch/ifunc-memrchr.h  |   7 +-
+ .../loongarch/lp64/multiarch/ifunc-stpcpy.h   |  34 +
+ .../loongarch/lp64/multiarch/memchr-lasx.S    | 108 ++
+ .../loongarch/lp64/multiarch/memcmp-lasx.S    | 199 ++++
+ .../loongarch/lp64/multiarch/memcpy-lasx.S    | 962 +-----------------
+ .../loongarch/lp64/multiarch/memmove-lasx.S   | 300 ++++++
+ sysdeps/loongarch/lp64/multiarch/memmove.c    |   2 +-
+ .../loongarch/lp64/multiarch/memrchr-lasx.S   | 114 +++
+ .../loongarch/lp64/multiarch/memset-lasx.S    | 427 +++-----
+ .../loongarch/lp64/multiarch/rawmemchr-lasx.S |  51 +
+ sysdeps/loongarch/lp64/multiarch/stpcpy.c     |   2 +-
+ .../loongarch/lp64/multiarch/strchr-lasx.S    |  68 ++
+ sysdeps/loongarch/lp64/multiarch/strchr.c     |   2 +-
+ .../loongarch/lp64/multiarch/strchrnul-lasx.S |   4 +
+ sysdeps/loongarch/lp64/multiarch/strchrnul.c  |   2 +-
+ .../loongarch/lp64/multiarch/strlen-lasx.S    |  55 +
+ sysdeps/loongarch/lp64/multiarch/strlen.c     |   2 +-
+ .../loongarch/lp64/multiarch/strnlen-lasx.S   |  92 ++
+ sysdeps/loongarch/lp64/multiarch/strnlen.c    |   2 +-
+ .../loongarch/lp64/multiarch/strrchr-lasx.S   | 113 ++
+ sysdeps/loongarch/lp64/strchr.S               |   1 -
+ 24 files changed, 1292 insertions(+), 1294 deletions(-)
+ create mode 100644 sysdeps/loongarch/lp64/multiarch/ifunc-stpcpy.h
+ create mode 100644 sysdeps/loongarch/lp64/multiarch/memchr-lasx.S
+ create mode 100644 sysdeps/loongarch/lp64/multiarch/memcmp-lasx.S
+ create mode 100644 sysdeps/loongarch/lp64/multiarch/memmove-lasx.S
+ create mode 100644 sysdeps/loongarch/lp64/multiarch/memrchr-lasx.S
+ create mode 100644 sysdeps/loongarch/lp64/multiarch/rawmemchr-lasx.S
+ create mode 100644 sysdeps/loongarch/lp64/multiarch/strchr-lasx.S
+ create mode 100644 sysdeps/loongarch/lp64/multiarch/strchrnul-lasx.S
+ create mode 100644 sysdeps/loongarch/lp64/multiarch/strlen-lasx.S
+ create mode 100644 sysdeps/loongarch/lp64/multiarch/strnlen-lasx.S
+ create mode 100644 sysdeps/loongarch/lp64/multiarch/strrchr-lasx.S
+
+diff --git a/sysdeps/loongarch/lp64/multiarch/Makefile b/sysdeps/loongarch/lp64/multiarch/Makefile
+index 460db81f22..6bd48f0e92 100644
+--- a/sysdeps/loongarch/lp64/multiarch/Makefile
++++ b/sysdeps/loongarch/lp64/multiarch/Makefile
+@@ -1,16 +1,16 @@
+ ifeq ($(subdir),string)
+ sysdep_routines += memcpy-aligned memcpy-unaligned memcpy-lasx \
+-		   memset-aligned memset-unaligned memset-lasx memset-lsx \
+-		   memmove-unaligned memmove-lsx \
+-		   memchr-aligned memchr-lsx \
+-		   memrchr-generic memrchr-lsx \
+-		   memcmp-aligned memcmp-lsx \
+-		   rawmemchr-aligned rawmemchr-lsx \
+-		   strchr-aligned strchr-unaligned strchr-lsx \
+-		   strrchr-aligned strrchr-lsx \
+-		   strlen-aligned strlen-unaligned strlen-lsx \
+-		   strnlen-aligned strnlen-unaligned strnlen-lsx \
+-		   strchrnul-aligned strchrnul-unaligned strchrnul-lsx \
++		   memset-aligned memset-unaligned memset-lsx memset-lasx \
++		   memmove-unaligned memmove-lsx memmove-lasx \
++		   memchr-aligned memchr-lsx memchr-lasx \
++		   memrchr-generic memrchr-lsx memrchr-lasx \
++		   memcmp-aligned memcmp-lsx memcmp-lasx \
++		   rawmemchr-aligned rawmemchr-lsx rawmemchr-lasx \
++		   strchr-aligned strchr-unaligned strchr-lsx strchr-lasx \
++		   strrchr-aligned strrchr-lsx strrchr-lasx \
++		   strlen-aligned strlen-unaligned strlen-lsx strlen-lasx \
++		   strnlen-aligned strnlen-unaligned strnlen-lsx strnlen-lasx \
++		   strchrnul-aligned strchrnul-unaligned strchrnul-lsx strchrnul-lasx \
+ 		   strncmp-aligned strncmp-unaligned strncmp-lsx \
+ 		   strcpy-aligned strcpy-unaligned strcpy-lsx \
+ 		   stpcpy-aligned stpcpy-lsx \
+diff --git a/sysdeps/loongarch/lp64/multiarch/ifunc-impl-list.c b/sysdeps/loongarch/lp64/multiarch/ifunc-impl-list.c
+index b1dbe7f4b5..c2b6bbf736 100644
+--- a/sysdeps/loongarch/lp64/multiarch/ifunc-impl-list.c
++++ b/sysdeps/loongarch/lp64/multiarch/ifunc-impl-list.c
+@@ -43,6 +43,7 @@ __libc_ifunc_impl_list (const char *name, struct libc_ifunc_impl *array,
+ 	      )
+ 
+   IFUNC_IMPL (i, name, memmove,
++	      IFUNC_IMPL_ADD (array, i, memmove, 1, __memmove_lasx)
+ 	      IFUNC_IMPL_ADD (array, i, memmove, 1, __memmove_lsx)
+ 	      IFUNC_IMPL_ADD (array, i, memmove, 1, __memmove_aligned)
+ 	      IFUNC_IMPL_ADD (array, i, memmove, 1, __memmove_unaligned)
+@@ -56,49 +57,58 @@ __libc_ifunc_impl_list (const char *name, struct libc_ifunc_impl *array,
+ 	      )
+ 
+   IFUNC_IMPL (i, name, memchr,
++	      IFUNC_IMPL_ADD (array, i, memchr, 1, __memchr_lasx)
+ 	      IFUNC_IMPL_ADD (array, i, memchr, 1, __memchr_lsx)
+ 	      IFUNC_IMPL_ADD (array, i, memchr, 1, __memchr_aligned)
+ 	      )
+ 
+   IFUNC_IMPL (i, name, memrchr,
+-	      IFUNC_IMPL_ADD (array, i, memrchr, 1, __memrchr_generic)
++	      IFUNC_IMPL_ADD (array, i, memrchr, 1, __memrchr_lasx)
+ 	      IFUNC_IMPL_ADD (array, i, memrchr, 1, __memrchr_lsx)
++	      IFUNC_IMPL_ADD (array, i, memrchr, 1, __memrchr_generic)
+ 	      )
+ 
+   IFUNC_IMPL (i, name, memcmp,
++	      IFUNC_IMPL_ADD (array, i, memcmp, 1, __memcmp_lasx)
+ 	      IFUNC_IMPL_ADD (array, i, memcmp, 1, __memcmp_lsx)
+ 	      IFUNC_IMPL_ADD (array, i, memcmp, 1, __memcmp_aligned)
+ 	      )
+ 
+   IFUNC_IMPL (i, name, rawmemchr,
++	      IFUNC_IMPL_ADD (array, i, rawmemchr, 1, __rawmemchr_lasx)
+ 	      IFUNC_IMPL_ADD (array, i, rawmemchr, 1, __rawmemchr_lsx)
+ 	      IFUNC_IMPL_ADD (array, i, rawmemchr, 1, __rawmemchr_aligned)
+ 	      )
+ 
+   IFUNC_IMPL (i, name, strchr,
++	      IFUNC_IMPL_ADD (array, i, strchr, 1, __strchr_lasx)
+ 	      IFUNC_IMPL_ADD (array, i, strchr, 1, __strchr_lsx)
+ 	      IFUNC_IMPL_ADD (array, i, strchr, 1, __strchr_aligned)
+ 	      IFUNC_IMPL_ADD (array, i, strchr, 1, __strchr_unaligned)
+ 	      )
+ 
+   IFUNC_IMPL (i, name, strrchr,
++	      IFUNC_IMPL_ADD (array, i, strrchr, 1, __strrchr_lasx)
+ 	      IFUNC_IMPL_ADD (array, i, strrchr, 1, __strrchr_lsx)
+ 	      IFUNC_IMPL_ADD (array, i, strrchr, 1, __strrchr_aligned)
+ 	      )
+ 
+   IFUNC_IMPL (i, name, strlen,
++	      IFUNC_IMPL_ADD (array, i, strlen, 1, __strlen_lasx)
+ 	      IFUNC_IMPL_ADD (array, i, strlen, 1, __strlen_lsx)
+ 	      IFUNC_IMPL_ADD (array, i, strlen, 1, __strlen_aligned)
+ 	      IFUNC_IMPL_ADD (array, i, strlen, 1, __strlen_unaligned)
+ 	      )
+ 
+   IFUNC_IMPL (i, name, strnlen,
++	      IFUNC_IMPL_ADD (array, i, strnlen, 1, __strnlen_lasx)
+ 	      IFUNC_IMPL_ADD (array, i, strnlen, 1, __strnlen_lsx)
+ 	      IFUNC_IMPL_ADD (array, i, strnlen, 1, __strnlen_aligned)
+ 	      IFUNC_IMPL_ADD (array, i, strnlen, 1, __strnlen_unaligned)
+ 	      )
+ 
+   IFUNC_IMPL (i, name, strchrnul,
++	      IFUNC_IMPL_ADD (array, i, strchrnul, 1, __strchrnul_lasx)
+ 	      IFUNC_IMPL_ADD (array, i, strchrnul, 1, __strchrnul_lsx)
+ 	      IFUNC_IMPL_ADD (array, i, strchrnul, 1, __strchrnul_aligned)
+ 	      IFUNC_IMPL_ADD (array, i, strchrnul, 1, __strchrnul_unaligned)
+diff --git a/sysdeps/loongarch/lp64/multiarch/ifunc-memchr.h b/sysdeps/loongarch/lp64/multiarch/ifunc-memchr.h
+index 9093f08c8e..5c01e1af07 100644
+--- a/sysdeps/loongarch/lp64/multiarch/ifunc-memchr.h
++++ b/sysdeps/loongarch/lp64/multiarch/ifunc-memchr.h
+@@ -19,6 +19,7 @@
+ 
+ #include <init-arch.h>
+ 
++extern __typeof (REDIRECT_NAME) OPTIMIZE (lasx) attribute_hidden;
+ extern __typeof (REDIRECT_NAME) OPTIMIZE (lsx) attribute_hidden;
+ extern __typeof (REDIRECT_NAME) OPTIMIZE (aligned) attribute_hidden;
+ 
+@@ -27,7 +28,9 @@ IFUNC_SELECTOR (void)
+ {
+   INIT_ARCH();
+ 
+-  if (SUPPORT_LSX)
++  if (SUPPORT_LASX)
++    return OPTIMIZE (lasx);
++  else if (SUPPORT_LSX)
+     return OPTIMIZE (lsx);
+   else
+     return OPTIMIZE (aligned);
+diff --git a/sysdeps/loongarch/lp64/multiarch/ifunc-memrchr.h b/sysdeps/loongarch/lp64/multiarch/ifunc-memrchr.h
+index 51f1d8d4cc..d264944c41 100644
+--- a/sysdeps/loongarch/lp64/multiarch/ifunc-memrchr.h
++++ b/sysdeps/loongarch/lp64/multiarch/ifunc-memrchr.h
+@@ -19,15 +19,18 @@
+ 
+ #include <init-arch.h>
+ 
+-extern __typeof (REDIRECT_NAME) OPTIMIZE (generic) attribute_hidden;
++extern __typeof (REDIRECT_NAME) OPTIMIZE (lasx) attribute_hidden;
+ extern __typeof (REDIRECT_NAME) OPTIMIZE (lsx) attribute_hidden;
++extern __typeof (REDIRECT_NAME) OPTIMIZE (generic) attribute_hidden;
+ 
+ static inline void *
+ IFUNC_SELECTOR (void)
+ {
+   INIT_ARCH();
+ 
+-  if (SUPPORT_LSX)
++  if (SUPPORT_LASX)
++    return OPTIMIZE (lasx);
++  else if (SUPPORT_LSX)
+     return OPTIMIZE (lsx);
+   else
+     return OPTIMIZE (generic);
+diff --git a/sysdeps/loongarch/lp64/multiarch/ifunc-stpcpy.h b/sysdeps/loongarch/lp64/multiarch/ifunc-stpcpy.h
+new file mode 100644
+index 0000000000..9093f08c8e
+--- /dev/null
++++ b/sysdeps/loongarch/lp64/multiarch/ifunc-stpcpy.h
+@@ -0,0 +1,34 @@
++/* Common definition for memchr implementation.
++   All versions must be listed in ifunc-impl-list.c.
++   Copyright (C) 2017-2022 Free Software Foundation, Inc.
++   This file is part of the GNU C Library.
++
++   The GNU C Library is free software; you can redistribute it and/or
++   modify it under the terms of the GNU Lesser General Public
++   License as published by the Free Software Foundation; either
++   version 2.1 of the License, or (at your option) any later version.
++
++   The GNU C Library is distributed in the hope that it will be useful,
++   but WITHOUT ANY WARRANTY; without even the implied warranty of
++   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++   Lesser General Public License for more details.
++
++   You should have received a copy of the GNU Lesser General Public
++   License along with the GNU C Library; if not, see
++   <https://www.gnu.org/licenses/>.  */
++
++#include <init-arch.h>
++
++extern __typeof (REDIRECT_NAME) OPTIMIZE (lsx) attribute_hidden;
++extern __typeof (REDIRECT_NAME) OPTIMIZE (aligned) attribute_hidden;
++
++static inline void *
++IFUNC_SELECTOR (void)
++{
++  INIT_ARCH();
++
++  if (SUPPORT_LSX)
++    return OPTIMIZE (lsx);
++  else
++    return OPTIMIZE (aligned);
++}
+diff --git a/sysdeps/loongarch/lp64/multiarch/memchr-lasx.S b/sysdeps/loongarch/lp64/multiarch/memchr-lasx.S
+new file mode 100644
+index 0000000000..e63e34aec5
+--- /dev/null
++++ b/sysdeps/loongarch/lp64/multiarch/memchr-lasx.S
+@@ -0,0 +1,108 @@
++#ifdef _LIBC
++#include <sysdep.h>
++#include <sys/regdef.h>
++#include <sys/asm.h>
++#else
++#include <sys/asm.h>
++#include <sys/regdef.h>
++#endif
++
++#if IS_IN (libc)
++
++#define MEMCHR	__memchr_lasx
++
++LEAF(MEMCHR)
++    .align          6
++    beqz            a2, L(ret0)
++    add.d           a3, a0, a2
++    andi            t0, a0, 0x3f
++    bstrins.d       a0, zero, 5, 0
++
++    xvld            $xr0, a0, 0
++    xvld            $xr1, a0, 32
++    li.d            t1, -1
++    li.d            t2, 64
++
++    xvreplgr2vr.b   $xr2, a1
++    sll.d           t3, t1, t0
++    sub.d           t2, t2, t0
++    xvseq.b         $xr0, $xr0, $xr2
++
++    xvseq.b         $xr1, $xr1, $xr2
++    xvmsknz.b       $xr0, $xr0
++    xvmsknz.b       $xr1, $xr1
++    xvpickve.w      $xr3, $xr0, 4
++
++
++    xvpickve.w      $xr4, $xr1, 4
++    vilvl.h         $vr0, $vr3, $vr0
++    vilvl.h         $vr1, $vr4, $vr1
++    vilvl.w         $vr0, $vr1, $vr0
++
++    movfr2gr.d      t0, $f0
++    and             t0, t0, t3
++    bgeu            t2, a2, L(end)
++    bnez            t0, L(found)
++
++    addi.d          a4, a3, -1
++    bstrins.d       a4, zero, 5, 0
++L(loop):
++    xvld            $xr0, a0, 64
++    xvld            $xr1, a0, 96
++
++    addi.d          a0, a0, 64
++    xvseq.b         $xr0, $xr0, $xr2
++    xvseq.b         $xr1, $xr1, $xr2
++    beq             a0, a4, L(out)
++
++
++    xvmax.bu        $xr3, $xr0, $xr1
++    xvseteqz.v      $fcc0, $xr3
++    bcnez           $fcc0, L(loop)
++    xvmsknz.b       $xr0, $xr0
++
++    xvmsknz.b       $xr1, $xr1
++    xvpickve.w      $xr3, $xr0, 4
++    xvpickve.w      $xr4, $xr1, 4
++    vilvl.h         $vr0, $vr3, $vr0
++
++    vilvl.h         $vr1, $vr4, $vr1
++    vilvl.w         $vr0, $vr1, $vr0
++    movfr2gr.d      t0, $f0
++L(found):
++    ctz.d           t1, t0
++
++    add.d           a0, a0, t1
++    jr              ra
++L(ret0):
++    move            a0, zero
++    jr              ra
++
++
++L(out):
++    xvmsknz.b       $xr0, $xr0
++    xvmsknz.b       $xr1, $xr1
++    xvpickve.w      $xr3, $xr0, 4
++    xvpickve.w      $xr4, $xr1, 4
++
++    vilvl.h         $vr0, $vr3, $vr0
++    vilvl.h         $vr1, $vr4, $vr1
++    vilvl.w         $vr0, $vr1, $vr0
++    movfr2gr.d      t0, $f0
++
++L(end):
++    sub.d           t2, zero, a3
++    srl.d           t1, t1, t2
++    and             t0, t0, t1
++    ctz.d           t1, t0
++
++    add.d           a0, a0, t1
++    maskeqz         a0, a0, t0
++    jr              ra
++END(MEMCHR)
++
++#ifdef _LIBC
++libc_hidden_builtin_def (MEMCHR)
++#endif
++
++#endif
+diff --git a/sysdeps/loongarch/lp64/multiarch/memcmp-lasx.S b/sysdeps/loongarch/lp64/multiarch/memcmp-lasx.S
+new file mode 100644
+index 0000000000..30e2dbe6f2
+--- /dev/null
++++ b/sysdeps/loongarch/lp64/multiarch/memcmp-lasx.S
+@@ -0,0 +1,199 @@
++#ifdef _LIBC
++#include <sysdep.h>
++#include <sys/regdef.h>
++#include <sys/asm.h>
++#else
++#include <sys/asm.h>
++#include <sys/regdef.h>
++#endif
++
++#if IS_IN (libc)
++
++#define MEMCMP  __memcmp_lasx
++
++LEAF(MEMCMP)
++    .align          6
++    li.d            t2, 32
++    add.d           a3, a0, a2
++    add.d           a4, a1, a2
++    bgeu            t2, a2, L(less32) # a2 <= 32
++
++    li.d            t1, 160
++    bgeu            a2, t1, L(make_aligned)  # a2 >= 160
++L(loop32):
++    xvld            $xr0, a0, 0
++    xvld            $xr1, a1, 0
++
++    addi.d          a0, a0, 32
++    addi.d          a1, a1, 32
++    addi.d          a2, a2, -32
++    xvseq.b         $xr2, $xr0, $xr1
++
++    xvsetanyeqz.b   $fcc0, $xr2
++    bcnez           $fcc0, L(end)
++L(last_bytes):
++    bltu            t2, a2, L(loop32)
++    xvld            $xr0, a3, -32
++
++
++    xvld            $xr1, a4, -32
++    xvseq.b         $xr2, $xr0, $xr1
++L(end):
++    xvmsknz.b       $xr2, $xr2
++    xvpermi.q       $xr4, $xr0, 1
++
++    xvpickve.w      $xr3, $xr2, 4
++    xvpermi.q       $xr5, $xr1, 1
++    vilvl.h         $vr2, $vr3, $vr2
++    movfr2gr.s      t0, $f2
++
++    cto.w           t0, t0
++    vreplgr2vr.b    $vr2, t0
++    vshuf.b         $vr0, $vr4, $vr0, $vr2
++    vshuf.b         $vr1, $vr5, $vr1, $vr2
++
++    vpickve2gr.bu   t0, $vr0, 0
++    vpickve2gr.bu   t1, $vr1, 0
++    sub.d           a0, t0, t1
++    jr              ra
++
++
++L(less32):
++    srli.d          t0, a2, 4
++    beqz            t0, L(less16)
++    vld             $vr0, a0, 0
++    vld             $vr1, a1, 0
++
++    vld             $vr2, a3, -16
++    vld             $vr3, a4, -16
++L(short_ret):
++    vseq.b          $vr4, $vr0, $vr1
++    vseq.b          $vr5, $vr2, $vr3
++
++    vmsknz.b        $vr4, $vr4
++    vmsknz.b        $vr5, $vr5
++    vilvl.h         $vr4, $vr5, $vr4
++    movfr2gr.s      t0, $f4
++
++    cto.w           t0, t0
++    vreplgr2vr.b    $vr4, t0
++    vshuf.b         $vr0, $vr2, $vr0, $vr4
++    vshuf.b         $vr1, $vr3, $vr1, $vr4
++
++
++    vpickve2gr.bu   t0, $vr0, 0
++    vpickve2gr.bu   t1, $vr1, 0
++    sub.d           a0, t0, t1
++    jr              ra
++
++L(less16):
++    srli.d          t0, a2, 3
++    beqz            t0, L(less8)
++    vldrepl.d       $vr0, a0, 0
++    vldrepl.d       $vr1, a1, 0
++
++    vldrepl.d       $vr2, a3, -8
++    vldrepl.d       $vr3, a4, -8
++    b               L(short_ret)
++L(less8):
++    srli.d          t0, a2, 2
++
++    beqz            t0, L(less4)
++    vldrepl.w       $vr0, a0, 0
++    vldrepl.w       $vr1, a1, 0
++    vldrepl.w       $vr2, a3, -4
++
++
++    vldrepl.w       $vr3, a4, -4
++    b               L(short_ret)
++L(less4):
++    srli.d          t0, a2, 1
++    beqz            t0, L(less2)
++
++    vldrepl.h       $vr0, a0, 0
++    vldrepl.h       $vr1, a1, 0
++    vldrepl.h       $vr2, a3, -2
++    vldrepl.h       $vr3, a4, -2
++
++    b               L(short_ret)
++L(less2):
++    beqz            a2, L(ret0)
++    ld.bu           t0, a0, 0
++    ld.bu           t1, a1, 0
++
++    sub.d           a0, t0, t1
++    jr              ra
++L(ret0):
++    move            a0, zero
++    jr              ra
++
++
++    nop
++    nop
++    nop
++/* make src1 aligned, and adjust scr2 and length. */
++L(make_aligned):
++    xvld            $xr0, a0, 0
++
++    xvld            $xr1, a1, 0
++    xvseq.b         $xr2, $xr0, $xr1
++    xvsetanyeqz.b   $fcc0, $xr2
++    bcnez           $fcc0, L(end)
++
++    andi            t0, a0, 0x1f
++    sub.d           t0, t2, t0
++    sub.d           t1, a2, t0
++    add.d           a0, a0, t0
++
++    add.d           a1, a1, t0
++    andi            a2, t1, 0x3f
++    sub.d           t0, t1, a2
++    add.d           a5, a0, t0
++
++
++L(loop_align):
++    xvld            $xr0, a0, 0
++    xvld            $xr1, a1, 0
++    xvld            $xr2, a0, 32
++    xvld            $xr3, a1, 32
++
++    xvseq.b         $xr0, $xr0, $xr1
++    xvseq.b         $xr1, $xr2, $xr3
++    xvmin.bu        $xr2, $xr1, $xr0
++    xvsetanyeqz.b   $fcc0, $xr2
++
++    bcnez           $fcc0, L(pair_end)
++    addi.d          a0, a0, 64
++    addi.d          a1, a1, 64
++    bne             a0, a5, L(loop_align)
++
++    bnez            a2, L(last_bytes)
++    move            a0, zero
++    jr              ra
++    nop
++
++
++L(pair_end):
++    xvmsknz.b       $xr0, $xr0
++    xvmsknz.b       $xr1, $xr1
++    xvpickve.w      $xr2, $xr0, 4
++    xvpickve.w      $xr3, $xr1, 4
++
++    vilvl.h         $vr0, $vr2, $vr0
++    vilvl.h         $vr1, $vr3, $vr1
++    vilvl.w         $vr0, $vr1, $vr0
++    movfr2gr.d      t0, $f0
++
++    cto.d           t0, t0
++    ldx.bu          t1, a0, t0
++    ldx.bu          t2, a1, t0
++    sub.d           a0, t1, t2
++
++    jr              ra
++END(MEMCMP)
++
++#ifdef _LIBC
++libc_hidden_builtin_def (MEMCMP)
++#endif
++
++#endif
+diff --git a/sysdeps/loongarch/lp64/multiarch/memcpy-lasx.S b/sysdeps/loongarch/lp64/multiarch/memcpy-lasx.S
+index cb5bdfed66..99d2cc71fc 100644
+--- a/sysdeps/loongarch/lp64/multiarch/memcpy-lasx.S
++++ b/sysdeps/loongarch/lp64/multiarch/memcpy-lasx.S
+@@ -1,961 +1 @@
+-/* Multiple versions of memcpy. LoongArch64 version.
+-   Copyright (C) 2022 Free Software Foundation, Inc.
+-   This file is part of the GNU C Library.
+-
+-   The GNU C Library is free software; you can redistribute it and/or
+-   modify it under the terms of the GNU Lesser General Public
+-   License as published by the Free Software Foundation; either
+-   version 2.1 of the License, or (at your option) any later version.
+-
+-   The GNU C Library is distributed in the hope that it will be useful,
+-   but WITHOUT ANY WARRANTY; without even the implied warranty of
+-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+-   Lesser General Public License for more details.
+-
+-   You should have received a copy of the GNU Lesser General Public
+-   License along with the GNU C Library.  If not, see
+-   <https://www.gnu.org/licenses/>.  */
+-
+-#ifdef _LIBC
+-#include <sysdep.h>
+-#include <sys/regdef.h>
+-#include <sys/asm.h>
+-#else
+-#include <regdef.h>
+-#include <sys/asm.h>
+-#endif
+-
+-#if IS_IN (libc)
+-
+-#define MEMCPY_NAME __memcpy_lasx
+-
+-#ifdef ANDROID_CHANGES
+-LEAF(MEMCPY_NAME, 0)
+-#else
+-LEAF(MEMCPY_NAME)
+-#endif
+-
+-#define XVXOR_V(xd,xj,xk)       .word(0x1d<<26|0x09<<21|0x0E<<15|(xk&0x1f)<<10|(xj&0x1f)<<5|(xd&0x1f))
+-#define XVREPLVE0_B(xd,xj)      .word(0x1d<<26|0x18<<21|0x0E<<15|0x0<<10|(xj&0x1f)<<5|(xd&0x1f))
+-#define XVST(xd,rj,si12)        .word(0x0b<<26|0x3<<22|(si12&0xfff)<<10|(rj&0x1f)<<5|(xd&0x1f))
+-#define XVLD(xd,rj,si12)        .word(0x0b<<26|0x2<<22|(si12&0xfff)<<10|(rj&0x1f)<<5|(xd&0x1f))
+-#define VST(vd,rj,si12)         .word(0x0b<<26|0x1<<22|(si12&0xfff)<<10|(rj&0x1f)<<5|(vd&0x1f))
+-#define VLD(vd,rj,si12)         .word(0x0b<<26|0x0<<22|(si12&0xfff)<<10|(rj&0x1f)<<5|(vd&0x1f))
+-#define VSTELM_D(vd,rj,si8,idx) .word(0x31<<24|0x2<<19|(idx&0x1)<<18|(si8&0xff)<<10|(rj&0x1f)<<5|(vd&0x1f))
+-#define VSTELM_W(vd,rj,si8,idx) .word(0x31<<24|0x2<<20|(idx&0x3)<<18|(si8&0xff)<<10|(rj&0x1f)<<5|(vd&0x1f))
+-#define VSTELM_H(vd,rj,si8,idx) .word(0x31<<24|0x2<<21|(idx&0x7)<<18|(si8&0xff)<<10|(rj&0x1f)<<5|(vd&0x1f))
+-#define VSTELM_B(vd,rj,si8,idx) .word(0x31<<24|0x2<<22|(idx&0xf)<<18|(si8&0xff)<<10|(rj&0x1f)<<5|(vd&0x1f))
+-#define VLDREPL_D(vd,rj,si9)    .word(0x30<<24|0x2<<19|(si9&0x1ff)<<10|(rj&0x1f)<<5|(vd&0x1f))
+-#define VLDREPL_W(vd,rj,si10)   .word(0x30<<24|0x2<<20|(si10&0x3ff)<<10|(rj&0x1f)<<5|(vd&0x1f))
+-#define VLDREPL_H(vd,rj,si11)   .word(0x30<<24|0x2<<21|(si11&0x7ff)<<10|(rj&0x1f)<<5|(vd&0x1f))
+-#define VLDREPL_B(vd,rj,si12)   .word(0x30<<24|0x2<<22|(si12&0xfff)<<10|(rj&0x1f)<<5|(vd&0x1f))
+-
+-/* 1st var: dest ptr: void *str1 $r4.
+- * 2nd var: src  ptr: void *str2 $r5.
+- * 3rd var: size_t num.  */
+-
+-	add.d	t3, a1, a2		# src end, 2st var, 3rd var t3->$r15
+-	add.d	t2, a0, a2		# dest end, 1st var, 3rd var t2->$r14
+-	move	t0, a0			# $2 is func return value
+-	srai.d	t8, a2, 4		# num/16
+-	beqz	t8, less_16bytes       	# num<16
+-	nop
+-	srai.d	t8, a2, 8		# num/256
+-	bnez	t8, eqormore_256bytes  	# num>256
+-	nop
+-	srai.d	t8, a2, 7
+-	beqz	t8, less_128bytes	# num<128
+-	nop
+-
+-	XVLD(0, 5, 0)
+-	XVLD(1, 5, 32)
+-	XVLD(2, 5, 64)
+-	XVLD(3, 5, 96)
+-	XVLD(4, 15, -128)
+-	XVLD(5, 15, -96)
+-	XVLD(6, 15, -64)
+-	XVLD(7, 15, -32)
+-	XVST(0, 4, 0)
+-	XVST(1, 4, 32)
+-	XVST(2, 4, 64)
+-	XVST(3, 4, 96)
+-	XVST(4, 14, -128)
+-	XVST(5, 14, -96)
+-	XVST(6, 14, -64)
+-	XVST(7, 14, -32)
+-
+-	jr	ra
+-	nop
+-
+-less_128bytes:
+-	srai.d	t8, a2, 6 		# num/64
+-	beqz	t8, less_64bytes
+-	nop
+-
+-	XVLD(0, 5, 0)
+-	XVLD(1, 5, 32)
+-	XVLD(6, 15, -64)
+-	XVLD(7, 15, -32)
+-	XVST(0, 4, 0)
+-	XVST(1, 4, 32)
+-	XVST(6, 14, -64)
+-	XVST(7, 14, -32)
+-
+-	jr	ra
+-	nop
+-
+-less_64bytes:
+-	srai.d	t8, a2, 5 		# num/32
+-	beqz	t8, less_32bytes
+-	nop
+-
+-	XVLD(0, 5, 0)
+-	XVLD(7, 15, -32)
+-	XVST(0, 4, 0)
+-	XVST(7, 14, -32)
+-
+-	jr	ra
+-	nop
+-
+-less_32bytes:
+-	VLD(0, 5, 0)
+-	VLD(7, 15, -16)
+-	VST(0, 4, 0)
+-	VST(7, 14, -16)
+-
+-	jr	ra
+-	nop
+-
+-less_16bytes:
+-	srai.d	t8, a2, 3 		# num/8
+-	beqz	t8, less_8bytes
+-	nop
+-	VLDREPL_D(0, 5, 0)
+-	VLDREPL_D(7, 15, -1)
+-	VSTELM_D (0, 4, 0, 0)      	# store lower 8bytes to mem
+-	VSTELM_D (7, 14, -1, 0)	   	# store lower 8bytes to mem
+-	jr	ra
+-	nop
+-
+-less_8bytes:
+-	srai.d	t8, a2, 2
+-	beqz	t8, less_4bytes
+-	nop
+-	VLDREPL_W(0, 5, 0)
+-	VLDREPL_W(7, 15, -1)
+-	VSTELM_W (0, 4,  0, 0)
+-	VSTELM_W (7, 14, -1, 0)
+-	jr	ra
+-	nop
+-
+-less_4bytes:
+-	srai.d	t8, a2, 1
+-	beqz	t8, less_2bytes
+-	nop
+-	VLDREPL_H(0, 5, 0)
+-	VLDREPL_H(7, 15, -1)
+-	VSTELM_H (0, 4,  0, 0)
+-	VSTELM_H (7, 14, -1, 0)
+-	jr	ra
+-	nop
+-
+-less_2bytes:
+-	beqz	a2, less_1bytes
+-	nop
+-	VLDREPL_B(0, 5, 0)
+-	VSTELM_B (0, 4,  0,  0)
+-	jr	ra
+-	nop
+-
+-less_1bytes:
+-	jr	ra
+-	nop
+-
+-
+-eqormore_256bytes:
+-	srli.d	a0, a0, 5
+-	slli.d	a0, a0, 5
+-	addi.d	a0, a0,  0x20	 # a0:align dest start addr
+-	sub.d	t7, t0,  a0      # $2:dest start addr
+-
+-	XVLD(0, 5, 0)
+-
+-	sub.d	a1,  a1,  t7     # a1:newer src
+-
+-	XVST(0, 12, 0)
+-	XVLD(19, 15, -128)
+-	XVLD(18, 15,  -96)
+-	XVLD(17, 15,  -64)
+-	XVLD(16, 15,  -32)
+-
+-	add.d	t7, t7, a2   	# t7:num
+-	addi.d	t7, t7, -0x80
+-	srai.d	t8, t7, 22
+-	bnez	t8, loop_most	# >4MB; scache_size_half * 1/2
+-	nop
+-	srai.d	t8, t7, 12
+-	beqz	t8, loop_less	# <4096
+-	nop
+-
+-loop_more:
+-	XVLD( 0, 5, 0)
+-	XVLD( 1, 5, 32)
+-	XVLD( 2, 5, 64)
+-	XVLD( 3, 5, 96)
+-	XVLD( 4, 5, 128)
+-	XVLD( 5, 5, 160)
+-	XVLD( 6, 5, 192)
+-	XVLD( 7, 5, 224)
+-	XVLD( 8, 5, 256)
+-	XVLD( 9, 5, 288)
+-	XVLD(10, 5, 320)
+-	XVLD(11, 5, 352)
+-	XVLD(12, 5, 384)
+-	XVLD(13, 5, 416)
+-	XVLD(14, 5, 448)
+-	XVLD(15, 5, 480)
+-	XVST( 0, 4, 0)
+-	XVST( 1, 4, 32)
+-	XVST( 2, 4, 64)
+-	XVST( 3, 4, 96)
+-	XVST( 4, 4, 128)
+-	XVST( 5, 4, 160)
+-	XVST( 6, 4, 192)
+-	XVST( 7, 4, 224)
+-	XVST( 8, 4, 256)
+-	XVST( 9, 4, 288)
+-	XVST(10, 4, 320)
+-	XVST(11, 4, 352)
+-	XVST(12, 4, 384)
+-	XVST(13, 4, 416)
+-	XVST(14, 4, 448)
+-	XVST(15, 4, 480)
+-
+-	addi.d	a0,  a0,   512   #1
+-	addi.d	a1,  a1,   512   #1
+-
+-	XVLD( 0, 5, 0)
+-	XVLD( 1, 5, 32)
+-	XVLD( 2, 5, 64)
+-	XVLD( 3, 5, 96)
+-	XVLD( 4, 5, 128)
+-	XVLD( 5, 5, 160)
+-	XVLD( 6, 5, 192)
+-	XVLD( 7, 5, 224)
+-	XVLD( 8, 5, 256)
+-	XVLD( 9, 5, 288)
+-	XVLD(10, 5, 320)
+-	XVLD(11, 5, 352)
+-	XVLD(12, 5, 384)
+-	XVLD(13, 5, 416)
+-	XVLD(14, 5, 448)
+-	XVLD(15, 5, 480)
+-	XVST( 0, 4, 0)
+-	XVST( 1, 4, 32)
+-	XVST( 2, 4, 64)
+-	XVST( 3, 4, 96)
+-	XVST( 4, 4, 128)
+-	XVST( 5, 4, 160)
+-	XVST( 6, 4, 192)
+-	XVST( 7, 4, 224)
+-	XVST( 8, 4, 256)
+-	XVST( 9, 4, 288)
+-	XVST(10, 4, 320)
+-	XVST(11, 4, 352)
+-	XVST(12, 4, 384)
+-	XVST(13, 4, 416)
+-	XVST(14, 4, 448)
+-	XVST(15, 4, 480)
+-
+-	addi.d	a0,  a0,   512   #2
+-	addi.d	a1,  a1,   512   #2
+-
+-	XVLD( 0, 5, 0)
+-	XVLD( 1, 5, 32)
+-	XVLD( 2, 5, 64)
+-	XVLD( 3, 5, 96)
+-	XVLD( 4, 5, 128)
+-	XVLD( 5, 5, 160)
+-	XVLD( 6, 5, 192)
+-	XVLD( 7, 5, 224)
+-	XVLD( 8, 5, 256)
+-	XVLD( 9, 5, 288)
+-	XVLD(10, 5, 320)
+-	XVLD(11, 5, 352)
+-	XVLD(12, 5, 384)
+-	XVLD(13, 5, 416)
+-	XVLD(14, 5, 448)
+-	XVLD(15, 5, 480)
+-	XVST( 0, 4, 0)
+-	XVST( 1, 4, 32)
+-	XVST( 2, 4, 64)
+-	XVST( 3, 4, 96)
+-	XVST( 4, 4, 128)
+-	XVST( 5, 4, 160)
+-	XVST( 6, 4, 192)
+-	XVST( 7, 4, 224)
+-	XVST( 8, 4, 256)
+-	XVST( 9, 4, 288)
+-	XVST(10, 4, 320)
+-	XVST(11, 4, 352)
+-	XVST(12, 4, 384)
+-	XVST(13, 4, 416)
+-	XVST(14, 4, 448)
+-	XVST(15, 4, 480)
+-
+-	addi.d	a0,  a0,   512   #3
+-	addi.d	a1,  a1,   512   #3
+-
+-	XVLD( 0, 5, 0)
+-	XVLD( 1, 5, 32)
+-	XVLD( 2, 5, 64)
+-	XVLD( 3, 5, 96)
+-	XVLD( 4, 5, 128)
+-	XVLD( 5, 5, 160)
+-	XVLD( 6, 5, 192)
+-	XVLD( 7, 5, 224)
+-	XVLD( 8, 5, 256)
+-	XVLD( 9, 5, 288)
+-	XVLD(10, 5, 320)
+-	XVLD(11, 5, 352)
+-	XVLD(12, 5, 384)
+-	XVLD(13, 5, 416)
+-	XVLD(14, 5, 448)
+-	XVLD(15, 5, 480)
+-	XVST( 0, 4, 0)
+-	XVST( 1, 4, 32)
+-	XVST( 2, 4, 64)
+-	XVST( 3, 4, 96)
+-	XVST( 4, 4, 128)
+-	XVST( 5, 4, 160)
+-	XVST( 6, 4, 192)
+-	XVST( 7, 4, 224)
+-	XVST( 8, 4, 256)
+-	XVST( 9, 4, 288)
+-	XVST(10, 4, 320)
+-	XVST(11, 4, 352)
+-	XVST(12, 4, 384)
+-	XVST(13, 4, 416)
+-	XVST(14, 4, 448)
+-	XVST(15, 4, 480)
+-
+-	addi.d	a0,  a0,   512   #4
+-	addi.d	a1,  a1,   512   #4
+-
+-	XVLD( 0, 5, 0)
+-	XVLD( 1, 5, 32)
+-	XVLD( 2, 5, 64)
+-	XVLD( 3, 5, 96)
+-	XVLD( 4, 5, 128)
+-	XVLD( 5, 5, 160)
+-	XVLD( 6, 5, 192)
+-	XVLD( 7, 5, 224)
+-	XVLD( 8, 5, 256)
+-	XVLD( 9, 5, 288)
+-	XVLD(10, 5, 320)
+-	XVLD(11, 5, 352)
+-	XVLD(12, 5, 384)
+-	XVLD(13, 5, 416)
+-	XVLD(14, 5, 448)
+-	XVLD(15, 5, 480)
+-	XVST( 0, 4, 0)
+-	XVST( 1, 4, 32)
+-	XVST( 2, 4, 64)
+-	XVST( 3, 4, 96)
+-	XVST( 4, 4, 128)
+-	XVST( 5, 4, 160)
+-	XVST( 6, 4, 192)
+-	XVST( 7, 4, 224)
+-	XVST( 8, 4, 256)
+-	XVST( 9, 4, 288)
+-	XVST(10, 4, 320)
+-	XVST(11, 4, 352)
+-	XVST(12, 4, 384)
+-	XVST(13, 4, 416)
+-	XVST(14, 4, 448)
+-	XVST(15, 4, 480)
+-
+-	addi.d	a0,  a0,   512   #5
+-	addi.d	a1,  a1,   512   #5
+-
+-	XVLD( 0, 5, 0)
+-	XVLD( 1, 5, 32)
+-	XVLD( 2, 5, 64)
+-	XVLD( 3, 5, 96)
+-	XVLD( 4, 5, 128)
+-	XVLD( 5, 5, 160)
+-	XVLD( 6, 5, 192)
+-	XVLD( 7, 5, 224)
+-	XVLD( 8, 5, 256)
+-	XVLD( 9, 5, 288)
+-	XVLD(10, 5, 320)
+-	XVLD(11, 5, 352)
+-	XVLD(12, 5, 384)
+-	XVLD(13, 5, 416)
+-	XVLD(14, 5, 448)
+-	XVLD(15, 5, 480)
+-	XVST( 0, 4, 0)
+-	XVST( 1, 4, 32)
+-	XVST( 2, 4, 64)
+-	XVST( 3, 4, 96)
+-	XVST( 4, 4, 128)
+-	XVST( 5, 4, 160)
+-	XVST( 6, 4, 192)
+-	XVST( 7, 4, 224)
+-	XVST( 8, 4, 256)
+-	XVST( 9, 4, 288)
+-	XVST(10, 4, 320)
+-	XVST(11, 4, 352)
+-	XVST(12, 4, 384)
+-	XVST(13, 4, 416)
+-	XVST(14, 4, 448)
+-	XVST(15, 4, 480)
+-
+-	addi.d	a0,  a0,   512   #6
+-	addi.d	a1,  a1,   512   #6
+-
+-	XVLD( 0, 5, 0)
+-	XVLD( 1, 5, 32)
+-	XVLD( 2, 5, 64)
+-	XVLD( 3, 5, 96)
+-	XVLD( 4, 5, 128)
+-	XVLD( 5, 5, 160)
+-	XVLD( 6, 5, 192)
+-	XVLD( 7, 5, 224)
+-	XVLD( 8, 5, 256)
+-	XVLD( 9, 5, 288)
+-	XVLD(10, 5, 320)
+-	XVLD(11, 5, 352)
+-	XVLD(12, 5, 384)
+-	XVLD(13, 5, 416)
+-	XVLD(14, 5, 448)
+-	XVLD(15, 5, 480)
+-	XVST( 0, 4, 0)
+-	XVST( 1, 4, 32)
+-	XVST( 2, 4, 64)
+-	XVST( 3, 4, 96)
+-	XVST( 4, 4, 128)
+-	XVST( 5, 4, 160)
+-	XVST( 6, 4, 192)
+-	XVST( 7, 4, 224)
+-	XVST( 8, 4, 256)
+-	XVST( 9, 4, 288)
+-	XVST(10, 4, 320)
+-	XVST(11, 4, 352)
+-	XVST(12, 4, 384)
+-	XVST(13, 4, 416)
+-	XVST(14, 4, 448)
+-	XVST(15, 4, 480)
+-
+-	addi.d	a0,  a0,   512   #7
+-	addi.d	a1,  a1,   512   #7
+-
+-	XVLD( 0, 5, 0)
+-	XVLD( 1, 5, 32)
+-	XVLD( 2, 5, 64)
+-	XVLD( 3, 5, 96)
+-	XVLD( 4, 5, 128)
+-	XVLD( 5, 5, 160)
+-	XVLD( 6, 5, 192)
+-	XVLD( 7, 5, 224)
+-	XVLD( 8, 5, 256)
+-	XVLD( 9, 5, 288)
+-	XVLD(10, 5, 320)
+-	XVLD(11, 5, 352)
+-	XVLD(12, 5, 384)
+-	XVLD(13, 5, 416)
+-	XVLD(14, 5, 448)
+-	XVLD(15, 5, 480)
+-	XVST( 0, 4, 0)
+-	XVST( 1, 4, 32)
+-	XVST( 2, 4, 64)
+-	XVST( 3, 4, 96)
+-	XVST( 4, 4, 128)
+-	XVST( 5, 4, 160)
+-	XVST( 6, 4, 192)
+-	XVST( 7, 4, 224)
+-	XVST( 8, 4, 256)
+-	XVST( 9, 4, 288)
+-	XVST(10, 4, 320)
+-	XVST(11, 4, 352)
+-	XVST(12, 4, 384)
+-	XVST(13, 4, 416)
+-	XVST(14, 4, 448)
+-	XVST(15, 4, 480)
+-
+-	addi.d	a0,  a0,   512   #8
+-	addi.d	a1,  a1,   512   #8
+-	addi.d	t8, t8, -1
+-	bnez	t8, loop_more
+-	nop
+-
+-  	lu12i.w t4, 1        #get imm 1<<12
+-  	addi.d	t4, t4, -1
+-  	and	t7, t7, t4
+-
+-	b	loop_less
+-	nop
+-
+-loop_most:
+-	srai.d	t8, t7, 12
+-        lu12i.w t5, 1	     # load imm 4096
+-        add.d 	t6, t5, a0   #t6 = a0 + 4096
+-        add.d 	t5, t5, a1   #t5 = a1 + 4096
+-
+-loop_most_loop:
+-	XVLD( 0, 5, 0)
+-	XVLD( 1, 5, 32)
+-	preld 0, t5, 0       #imm in pref inst is 16b, but 12b in preld.
+-	XVLD( 2, 5, 64)
+-	XVLD( 3, 5, 96)
+-	preld 0, t5, 64      #prefech for next loop cache data
+-	XVLD( 4, 5, 128)
+-	XVLD( 5, 5, 160)
+-	preld 0, t5, 128
+-	XVLD( 6, 5, 192)
+-	XVLD( 7, 5, 224)
+-	preld 0, t5, 192
+-	XVLD( 8, 5, 256)
+-	XVLD( 9, 5, 288)
+-	preld 0, t5, 256
+-	XVLD(10, 5, 320)
+-	XVLD(11, 5, 352)
+-	preld 0, t5, 320
+-	XVLD(12, 5, 384)
+-	XVLD(13, 5, 416)
+-	preld 0, t5, 384
+-	XVLD(14, 5, 448)
+-	XVLD(15, 5, 480)
+-	preld 0, t5, 448
+-	XVST( 0, 4, 0)
+-	XVST( 1, 4, 32)
+-	preld 8, t6, 0
+-	XVST( 2, 4, 64)
+-	XVST( 3, 4, 96)
+-	preld 8, t6, 64
+-	XVST( 4, 4, 128)
+-	XVST( 5, 4, 160)
+-	preld 8, t6, 128
+-	XVST( 6, 4, 192)
+-	XVST( 7, 4, 224)
+-	preld 8, t6, 192
+-	XVST( 8, 4, 256)
+-	XVST( 9, 4, 288)
+-	preld 8, t6, 256
+-	XVST(10, 4, 320)
+-	XVST(11, 4, 352)
+-	preld 8, t6, 320
+-	XVST(12, 4, 384)
+-	XVST(13, 4, 416)
+-	preld 8, t6, 384
+-	XVST(14, 4, 448)
+-	XVST(15, 4, 480)
+-	preld 8, t6, 448
+-	addi.d	a0,  a0,   512   #1
+-	addi.d	a1,  a1,   512   #1
+-	addi.d  t5,  t5,   512
+-   	addi.d  t6,  t6,   512
+-	XVLD( 0, 5, 0)
+-	XVLD( 1, 5, 32)
+-	preld 0, t5, 0
+-	XVLD( 2, 5, 64)
+-	XVLD( 3, 5, 96)
+-	preld 0, t5, 64
+-	XVLD( 4, 5, 128)
+-	XVLD( 5, 5, 160)
+-	preld 0, t5, 128
+-	XVLD( 6, 5, 192)
+-	XVLD( 7, 5, 224)
+-	preld 0, t5, 192
+-	XVLD( 8, 5, 256)
+-	XVLD( 9, 5, 288)
+-	preld 0, t5, 256
+-	XVLD(10, 5, 320)
+-	XVLD(11, 5, 352)
+-	preld 0, t5, 320
+-	XVLD(12, 5, 384)
+-	XVLD(13, 5, 416)
+-	preld 0, t5, 384
+-	XVLD(14, 5, 448)
+-	XVLD(15, 5, 480)
+-	preld 0, t5, 448
+-	XVST( 0, 4, 0)
+-	XVST( 1, 4, 32)
+-	preld 8, t6, 0
+-	XVST( 2, 4, 64)
+-	XVST( 3, 4, 96)
+-	preld 8, t6, 64
+-	XVST( 4, 4, 128)
+-	XVST( 5, 4, 160)
+-	preld 8, t6, 128
+-	XVST( 6, 4, 192)
+-	XVST( 7, 4, 224)
+-	preld 8, t6, 192
+-	XVST( 8, 4, 256)
+-	XVST( 9, 4, 288)
+-	preld 8, t6, 256
+-	XVST(10, 4, 320)
+-	XVST(11, 4, 352)
+-	preld 8, t6, 320
+-	XVST(12, 4, 384)
+-	XVST(13, 4, 416)
+-	preld 8, t6, 384
+-	XVST(14, 4, 448)
+-	XVST(15, 4, 480)
+-	preld 8, t6, 448
+-	addi.d	a0,  a0,   512   #2
+-	addi.d	a1,  a1,   512   #2
+-	addi.d  t5,  t5,   512
+-   	addi.d  t6,  t6,   512
+-	XVLD( 0, 5, 0)
+-	XVLD( 1, 5, 32)
+-	preld 0, t5, 0
+-	XVLD( 2, 5, 64)
+-	XVLD( 3, 5, 96)
+-	preld 0, t5, 64
+-	XVLD( 4, 5, 128)
+-	XVLD( 5, 5, 160)
+-	preld 0, t5, 128
+-	XVLD( 6, 5, 192)
+-	XVLD( 7, 5, 224)
+-	preld 0, t5, 192
+-	XVLD( 8, 5, 256)
+-	XVLD( 9, 5, 288)
+-	preld 0, t5, 256
+-	XVLD(10, 5, 320)
+-	XVLD(11, 5, 352)
+-	preld 0, t5, 320
+-	XVLD(12, 5, 384)
+-	XVLD(13, 5, 416)
+-	preld 0, t5, 384
+-	XVLD(14, 5, 448)
+-	XVLD(15, 5, 480)
+-	preld 0, t5, 448
+-	XVST( 0, 4, 0)
+-	XVST( 1, 4, 32)
+-	preld 8, t6, 0
+-	XVST( 2, 4, 64)
+-	XVST( 3, 4, 96)
+-	preld 8, t6, 64
+-	XVST( 4, 4, 128)
+-	XVST( 5, 4, 160)
+-	preld 8, t6, 128
+-	XVST( 6, 4, 192)
+-	XVST( 7, 4, 224)
+-	preld 8, t6, 192
+-	XVST( 8, 4, 256)
+-	XVST( 9, 4, 288)
+-	preld 8, t6, 256
+-	XVST(10, 4, 320)
+-	XVST(11, 4, 352)
+-	preld 8, t6, 320
+-	XVST(12, 4, 384)
+-	XVST(13, 4, 416)
+-	preld 8, t6, 384
+-	XVST(14, 4, 448)
+-	XVST(15, 4, 480)
+-	preld 8, t6, 448
+-	addi.d	a0,  a0,   512   #3
+-	addi.d	a1,  a1,   512   #3
+-	addi.d  t5,  t5,   512
+-   	addi.d  t6,  t6,   512
+-	XVLD( 0, 5, 0)
+-	XVLD( 1, 5, 32)
+-	preld 0, t5, 0
+-	XVLD( 2, 5, 64)
+-	XVLD( 3, 5, 96)
+-	preld 0, t5, 64
+-	XVLD( 4, 5, 128)
+-	XVLD( 5, 5, 160)
+-	preld 0, t5, 128
+-	XVLD( 6, 5, 192)
+-	XVLD( 7, 5, 224)
+-	preld 0, t5, 192
+-	XVLD( 8, 5, 256)
+-	XVLD( 9, 5, 288)
+-	preld 0, t5, 256
+-	XVLD(10, 5, 320)
+-	XVLD(11, 5, 352)
+-	preld 0, t5, 320
+-	XVLD(12, 5, 384)
+-	XVLD(13, 5, 416)
+-	preld 0, t5, 384
+-	XVLD(14, 5, 448)
+-	XVLD(15, 5, 480)
+-	preld 0, t5, 448
+-	XVST( 0, 4, 0)
+-	XVST( 1, 4, 32)
+-	preld 8, t6, 0
+-	XVST( 2, 4, 64)
+-	XVST( 3, 4, 96)
+-	preld 8, t6, 64
+-	XVST( 4, 4, 128)
+-	XVST( 5, 4, 160)
+-	preld 8, t6, 128
+-	XVST( 6, 4, 192)
+-	XVST( 7, 4, 224)
+-	preld 8, t6, 192
+-	XVST( 8, 4, 256)
+-	XVST( 9, 4, 288)
+-	preld 8, t6, 256
+-	XVST(10, 4, 320)
+-	XVST(11, 4, 352)
+-	preld 8, t6, 320
+-	XVST(12, 4, 384)
+-	XVST(13, 4, 416)
+-	preld 8, t6, 384
+-	XVST(14, 4, 448)
+-	XVST(15, 4, 480)
+-	preld 8, t6, 448
+-	addi.d	a0,  a0,   512   #4
+-	addi.d	a1,  a1,   512   #4
+-	addi.d  t5,  t5,   512
+-   	addi.d  t6,  t6,   512
+-	XVLD( 0, 5, 0)
+-	XVLD( 1, 5, 32)
+-	preld 0, t5, 0
+-	XVLD( 2, 5, 64)
+-	XVLD( 3, 5, 96)
+-	preld 0, t5, 64
+-	XVLD( 4, 5, 128)
+-	XVLD( 5, 5, 160)
+-	preld 0, t5, 128
+-	XVLD( 6, 5, 192)
+-	XVLD( 7, 5, 224)
+-	preld 0, t5, 192
+-	XVLD( 8, 5, 256)
+-	XVLD( 9, 5, 288)
+-	preld 0, t5, 256
+-	XVLD(10, 5, 320)
+-	XVLD(11, 5, 352)
+-	preld 0, t5, 320
+-	XVLD(12, 5, 384)
+-	XVLD(13, 5, 416)
+-	preld 0, t5, 384
+-	XVLD(14, 5, 448)
+-	XVLD(15, 5, 480)
+-	preld 0, t5, 448
+-	XVST( 0, 4, 0)
+-	XVST( 1, 4, 32)
+-	preld 8, t6, 0
+-	XVST( 2, 4, 64)
+-	XVST( 3, 4, 96)
+-	preld 8, t6, 64
+-	XVST( 4, 4, 128)
+-	XVST( 5, 4, 160)
+-	preld 8, t6, 128
+-	XVST( 6, 4, 192)
+-	XVST( 7, 4, 224)
+-	preld 8, t6, 192
+-	XVST( 8, 4, 256)
+-	XVST( 9, 4, 288)
+-	preld 8, t6, 256
+-	XVST(10, 4, 320)
+-	XVST(11, 4, 352)
+-	preld 8, t6, 320
+-	XVST(12, 4, 384)
+-	XVST(13, 4, 416)
+-	preld 8, t6, 384
+-	XVST(14, 4, 448)
+-	XVST(15, 4, 480)
+-	preld 8, t6, 448
+-	addi.d	a0,  a0,   512   #5
+-	addi.d	a1,  a1,   512   #5
+-	addi.d  t5,  t5,   512
+-   	addi.d  t6,  t6,   512
+-	XVLD( 0, 5, 0)
+-	XVLD( 1, 5, 32)
+-	preld 0, t5, 0
+-	XVLD( 2, 5, 64)
+-	XVLD( 3, 5, 96)
+-	preld 0, t5, 64
+-	XVLD( 4, 5, 128)
+-	XVLD( 5, 5, 160)
+-	preld 0, t5, 128
+-	XVLD( 6, 5, 192)
+-	XVLD( 7, 5, 224)
+-	preld 0, t5, 192
+-	XVLD( 8, 5, 256)
+-	XVLD( 9, 5, 288)
+-	preld 0, t5, 256
+-	XVLD(10, 5, 320)
+-	XVLD(11, 5, 352)
+-	preld 0, t5, 320
+-	XVLD(12, 5, 384)
+-	XVLD(13, 5, 416)
+-	preld 0, t5, 384
+-	XVLD(14, 5, 448)
+-	XVLD(15, 5, 480)
+-	preld 0, t5, 448
+-	XVST( 0, 4, 0)
+-	XVST( 1, 4, 32)
+-	preld 8, t6, 0
+-	XVST( 2, 4, 64)
+-	XVST( 3, 4, 96)
+-	preld 8, t6, 64
+-	XVST( 4, 4, 128)
+-	XVST( 5, 4, 160)
+-	preld 8, t6, 128
+-	XVST( 6, 4, 192)
+-	XVST( 7, 4, 224)
+-	preld 8, t6, 192
+-	XVST( 8, 4, 256)
+-	XVST( 9, 4, 288)
+-	preld 8, t6, 256
+-	XVST(10, 4, 320)
+-	XVST(11, 4, 352)
+-	preld 8, t6, 320
+-	XVST(12, 4, 384)
+-	XVST(13, 4, 416)
+-	preld 8, t6, 384
+-	XVST(14, 4, 448)
+-	XVST(15, 4, 480)
+-	preld 8, t6, 448
+-	addi.d	a0,  a0,   512   #6
+-	addi.d	a1,  a1,   512   #6
+-	addi.d  t5,  t5,   512
+-   	addi.d  t6,  t6,   512
+-	XVLD( 0, 5, 0)
+-	XVLD( 1, 5, 32)
+-	preld 0, t5, 0
+-	XVLD( 2, 5, 64)
+-	XVLD( 3, 5, 96)
+-	preld 0, t5, 64
+-	XVLD( 4, 5, 128)
+-	XVLD( 5, 5, 160)
+-	preld 0, t5, 128
+-	XVLD( 6, 5, 192)
+-	XVLD( 7, 5, 224)
+-	preld 0, t5, 192
+-	XVLD( 8, 5, 256)
+-	XVLD( 9, 5, 288)
+-	preld 0, t5, 256
+-	XVLD(10, 5, 320)
+-	XVLD(11, 5, 352)
+-	preld 0, t5, 320
+-	XVLD(12, 5, 384)
+-	XVLD(13, 5, 416)
+-	preld 0, t5, 384
+-	XVLD(14, 5, 448)
+-	XVLD(15, 5, 480)
+-	preld 0, t5, 448
+-	XVST( 0, 4, 0)
+-	XVST( 1, 4, 32)
+-	preld 8, t6, 0
+-	XVST( 2, 4, 64)
+-	XVST( 3, 4, 96)
+-	preld 8, t6, 64
+-	XVST( 4, 4, 128)
+-	XVST( 5, 4, 160)
+-	preld 8, t6, 128
+-	XVST( 6, 4, 192)
+-	XVST( 7, 4, 224)
+-	preld 8, t6, 192
+-	XVST( 8, 4, 256)
+-	XVST( 9, 4, 288)
+-	preld 8, t6, 256
+-	XVST(10, 4, 320)
+-	XVST(11, 4, 352)
+-	preld 8, t6, 320
+-	XVST(12, 4, 384)
+-	XVST(13, 4, 416)
+-	preld 8, t6, 384
+-	XVST(14, 4, 448)
+-	XVST(15, 4, 480)
+-	preld 8, t6, 448
+-	addi.d	a0,  a0,   512   #7
+-	addi.d	a1,  a1,   512   #7
+-	addi.d  t5,  t5,   512
+-   	addi.d  t6,  t6,   512
+-	XVLD( 0, 5, 0)
+-	XVLD( 1, 5, 32)
+-	preld 0, t5, 0
+-	XVLD( 2, 5, 64)
+-	XVLD( 3, 5, 96)
+-	preld 0, t5, 64
+-	XVLD( 4, 5, 128)
+-	XVLD( 5, 5, 160)
+-	preld 0, t5, 128
+-	XVLD( 6, 5, 192)
+-	XVLD( 7, 5, 224)
+-	preld 0, t5, 192
+-	XVLD( 8, 5, 256)
+-	XVLD( 9, 5, 288)
+-	preld 0, t5, 256
+-	XVLD(10, 5, 320)
+-	XVLD(11, 5, 352)
+-	preld 0, t5, 320
+-	XVLD(12, 5, 384)
+-	XVLD(13, 5, 416)
+-	preld 0, t5, 384
+-	XVLD(14, 5, 448)
+-	XVLD(15, 5, 480)
+-	preld 0, t5, 448
+-	XVST( 0, 4, 0)
+-	XVST( 1, 4, 32)
+-	preld 8, t6, 0
+-	XVST( 2, 4, 64)
+-	XVST( 3, 4, 96)
+-	preld 8, t6, 64
+-	XVST( 4, 4, 128)
+-	XVST( 5, 4, 160)
+-	preld 8, t6, 128
+-	XVST( 6, 4, 192)
+-	XVST( 7, 4, 224)
+-	preld 8, t6, 192
+-	XVST( 8, 4, 256)
+-	XVST( 9, 4, 288)
+-	preld 8, t6, 256
+-	XVST(10, 4, 320)
+-	XVST(11, 4, 352)
+-	preld 8, t6, 320
+-	XVST(12, 4, 384)
+-	XVST(13, 4, 416)
+-	preld 8, t6, 384
+-	XVST(14, 4, 448)
+-	XVST(15, 4, 480)
+-	preld 8, t6, 448
+-	addi.d	a0,  a0,   512   #8
+-	addi.d	a1,  a1,   512   #8
+-	addi.d  t5,  t5,   512
+-   	addi.d  t6,  t6,   512
+-	addi.d	t8, t8, -1
+-	bnez	t8, loop_most_loop
+-	nop
+-
+-  	lu12i.w t4, 1		 #get imm 1<<12
+-  	addi.d	t4, t4, -1
+-  	and	t7, t7, t4
+-
+-loop_less:
+-	XVLD( 0, 5, 0)
+-	XVLD( 1, 5, 32)
+-	XVLD( 2, 5, 64)
+-	XVLD( 3, 5, 96)
+-	XVST( 0, 4, 0)
+-	XVST( 1, 4, 32)
+-	XVST( 2, 4, 64)
+-	XVST( 3, 4, 96)
+-	addi.d	a0,  a0,  0x80
+-	addi.d	a1,  a1,  0x80
+-	addi.d	t7, t7,	  -0x80
+-	slt	t8, t7,	  zero
+-	beqz	t8, loop_less
+-	nop
+-	XVST(19, 14, -128)
+-	XVST(18, 14, -96)
+-	XVST(17, 14, -64)
+-	XVST(16, 14, -32)
+-
+-	move	v0, t0
+-	jr	ra
+-	nop
+-
+-END(MEMCPY_NAME)
+-#ifndef ANDROID_CHANGES
+-#ifdef _LIBC
+-libc_hidden_builtin_def (MEMCPY_NAME)
+-#endif
+-#endif
+-
+-#endif
++/* memcpy is part of memmove.S */
+diff --git a/sysdeps/loongarch/lp64/multiarch/memmove-lasx.S b/sysdeps/loongarch/lp64/multiarch/memmove-lasx.S
+new file mode 100644
+index 0000000000..bba2286776
+--- /dev/null
++++ b/sysdeps/loongarch/lp64/multiarch/memmove-lasx.S
+@@ -0,0 +1,300 @@
++#ifdef _LIBC
++#include <sysdep.h>
++#include <sys/regdef.h>
++#include <sys/asm.h>
++#else
++#include <regdef.h>
++#include <sys/asm.h>
++#endif
++
++#if IS_IN (libc)
++
++#ifndef MEMCPY_NAME
++#define MEMCPY_NAME __memcpy_lasx
++#endif
++
++#ifndef MEMMOVE_NAME
++#define MEMMOVE_NAME __memmove_lasx
++#endif
++
++LEAF(MEMCPY_NAME)
++    .align          6
++    li.d            t6, 32
++    add.d           a3, a0, a2
++    add.d           a4, a1, a2
++    bgeu            t6, a2, L(less_32bytes) # a2 <= 32
++
++    li.d            t8, 128
++    li.d            t7, 64
++    bltu            t8, a2, L(copy_long)    # a2 > 128
++    bltu            t7, a2, L(more_64bytes) # a2 > 64
++
++    xvld            $xr0, a1, 0
++    xvld            $xr1, a4, -32
++    xvst            $xr0, a0, 0
++    xvst            $xr1, a3, -32
++
++    jr              ra
++L(more_64bytes):
++    xvld            $xr0, a1, 0
++    xvld            $xr1, a1, 32
++    xvld            $xr2, a4, -64
++
++
++    xvld            $xr3, a4, -32
++    xvst            $xr0, a0, 0
++    xvst            $xr1, a0, 32
++    xvst            $xr2, a3, -64
++
++    xvst            $xr3, a3, -32
++    jr              ra
++L(less_32bytes):
++    srli.d          t0, a2, 4
++    beqz            t0, L(less_16bytes)
++
++    vld             $vr0, a1, 0
++    vld             $vr1, a4, -16
++    vst             $vr0, a0, 0
++    vst             $vr1, a3, -16
++
++    jr              ra
++L(less_16bytes):
++    srli.d          t0, a2, 3
++    beqz            t0, L(less_8bytes)
++    vldrepl.d       $vr0, a1, 0
++
++
++    vldrepl.d       $vr1, a4, -8
++    vstelm.d        $vr0, a0, 0, 0
++    vstelm.d        $vr1, a3, -8, 0
++    jr              ra
++
++L(less_8bytes):
++    srli.d          t0, a2, 2
++    beqz            t0, L(less_4bytes)
++    vldrepl.w       $vr0, a1, 0
++    vldrepl.w       $vr1, a4, -4
++
++    vstelm.w        $vr0, a0, 0, 0
++    vstelm.w        $vr1, a3, -4, 0
++    jr              ra
++L(less_4bytes):
++    srli.d          t0, a2, 1
++
++    beqz            t0, L(less_2bytes)
++    vldrepl.h       $vr0, a1, 0
++    vldrepl.h       $vr1, a4, -2
++    vstelm.h        $vr0, a0, 0, 0
++
++
++    vstelm.h        $vr1, a3, -2, 0
++    jr              ra
++L(less_2bytes):
++    beqz            a2, L(less_1bytes)
++    ld.b            t0, a1, 0
++
++    st.b            t0, a0, 0
++L(less_1bytes):
++    jr              ra
++    nop
++    nop
++END(MEMCPY_NAME)
++
++LEAF(MEMMOVE_NAME)
++    li.d            t6, 32
++    add.d           a3, a0, a2
++    add.d           a4, a1, a2
++    bgeu            t6, a2, L(less_32bytes) # a2 <= 32
++
++    li.d            t8, 128
++    li.d            t7, 64
++    bltu            t8, a2, L(move_long)    # a2 > 128
++    bltu            t7, a2, L(more_64bytes) # a2 > 64
++
++
++    xvld            $xr0, a1, 0
++    xvld            $xr1, a4, -32
++    xvst            $xr0, a0, 0
++    xvst            $xr1, a3, -32
++
++    jr              ra
++    nop
++L(move_long):
++    sub.d           t0, a0, a1
++    bltu            t0, a2, L(copy_back)
++
++L(copy_long):
++    xvld            $xr1, a1, 0
++    andi            t0, a0, 0x1f
++    sub.d           t0, t6, t0
++    add.d           a1, a1, t0
++
++    sub.d           a2, a2, t0
++    xvld            $xr0, a1, 0
++    addi.d          t1, a2, -32
++    add.d           a5, a0, t0
++
++
++    andi            a2, t1, 0xff
++    xvst            $xr1, a0, 0
++    beq             t1, a2, L(long_end)
++    sub.d           t0, t1, a2
++
++    add.d           a6, a1, t0
++L(loop_256):
++    xvld            $xr1, a1, 32
++    xvld            $xr2, a1, 64
++    xvld            $xr3, a1, 96
++
++    xvld            $xr4, a1, 128
++    xvld            $xr5, a1, 160
++    xvld            $xr6, a1, 192
++    xvld            $xr7, a1, 224
++
++    xvst            $xr0, a5, 0
++    xvld            $xr0, a1, 256
++    addi.d          a1, a1, 256
++    xvst            $xr1, a5, 32
++
++
++    xvst            $xr2, a5, 64
++    xvst            $xr3, a5, 96
++    xvst            $xr4, a5, 128
++    xvst            $xr5, a5, 160
++
++    xvst            $xr6, a5, 192
++    xvst            $xr7, a5, 224
++    addi.d          a5, a5, 256
++    bne             a1, a6, L(loop_256)
++
++L(long_end):
++    bltu            a2, t8, L(end_less_128)
++    xvld            $xr1, a1, 32
++    xvld            $xr2, a1, 64
++    xvld            $xr3, a1, 96
++
++    addi.d          a2, a2, -128
++    xvst            $xr0, a5, 0
++    xvld            $xr0, a1, 128
++    addi.d          a1, a1, 128
++
++
++    xvst            $xr1, a5, 32
++    xvst            $xr2, a5, 64
++    xvst            $xr3, a5, 96
++    addi.d          a5, a5, 128
++
++L(end_less_128):
++    blt             a2, t7, L(end_less_64)
++    xvld            $xr1, a1, 32
++    addi.d          a2, a2, -64
++    xvst            $xr0, a5, 0
++
++    xvld            $xr0, a1, 64
++    addi.d          a1, a1, 64
++    xvst            $xr1, a5, 32
++    addi.d          a5, a5, 64
++
++L(end_less_64):
++    blt             a2, t6, L(end_less_32)
++    xvst            $xr0, a5, 0
++    xvld            $xr0, a1, 32
++    addi.d          a5, a5, 32
++
++
++L(end_less_32):
++    xvld            $xr1, a4, -32
++    xvst            $xr0, a5, 0
++    xvst            $xr1, a3, -32
++    jr              ra
++
++L(copy_back):
++    xvld            $xr1, a4, -32
++    andi            t0, a3, 0x1f
++    sub.d           a4, a4, t0
++    sub.d           a2, a2, t0
++
++    xvld            $xr0, a4, -32
++    addi.d          t1, a2, -32
++    xvst            $xr1, a3, -32
++    sub.d           a3, a3, t0
++
++    andi            a2, t1, 0xff
++    beq             t1, a2, L(back_long_end)
++    sub.d           t1, t1, a2
++    sub.d           a6, a4, t1
++
++
++L(back_loop_256):
++    xvld            $xr1, a4, -64
++    xvld            $xr2, a4, -96
++    xvld            $xr3, a4, -128
++    xvld            $xr4, a4, -160
++
++    xvld            $xr5, a4, -192
++    xvld            $xr6, a4, -224
++    xvld            $xr7, a4, -256
++    xvst            $xr0, a3, -32
++
++    xvld            $xr0, a4, -288
++    addi.d          a4, a4, -256
++    xvst            $xr1, a3, -64
++    xvst            $xr2, a3, -96
++
++    xvst            $xr3, a3, -128
++    xvst            $xr4, a3, -160
++    xvst            $xr5, a3, -192
++    xvst            $xr6, a3, -224
++
++
++    xvst            $xr7, a3, -256
++    addi.d          a3, a3, -256
++    bne             a4, a6, L(back_loop_256)
++L(back_long_end):
++    blt             a2, t8, L(back_end_less_128)
++
++    xvld            $xr1, a4, -64
++    xvld            $xr2, a4, -96
++    xvld            $xr3, a4, -128
++    addi.d          a2, a2, -128
++
++    xvst            $xr0, a3, -32
++    xvld            $xr0, a4, -160
++    addi.d          a4, a4, -128
++    xvst            $xr1, a3, -64
++
++    xvst            $xr2, a3, -96
++    xvst            $xr3, a3, -128
++    addi.d          a3, a3, -128
++L(back_end_less_128):
++    blt             a2, t7, L(back_end_less_64)
++
++
++    xvld            $xr1, a4, -64
++    addi.d          a2, a2, -64
++    xvst            $xr0, a3, -32
++    xvld            $xr0, a4, -96
++
++    addi.d          a4, a4, -64
++    xvst            $xr1, a3, -64
++    addi.d          a3, a3, -64
++L(back_end_less_64):
++    blt             a2, t6, L(back_end_less_32)
++
++    xvst            $xr0, a3, -32
++    xvld            $xr0, a4, -64
++    addi.d          a3, a3, -32
++L(back_end_less_32):
++    xvld            $xr1, a1, 0
++
++    xvst            $xr0, a3, -32
++    xvst            $xr1, a0, 0
++    jr              ra
++END(MEMMOVE_NAME)
++
++#ifdef _LIBC
++libc_hidden_builtin_def (MEMCPY_NAME)
++libc_hidden_builtin_def (MEMMOVE_NAME)
++#endif
++
++#endif
+diff --git a/sysdeps/loongarch/lp64/multiarch/memmove.c b/sysdeps/loongarch/lp64/multiarch/memmove.c
+index 45c284ee2d..50a5205b2d 100644
+--- a/sysdeps/loongarch/lp64/multiarch/memmove.c
++++ b/sysdeps/loongarch/lp64/multiarch/memmove.c
+@@ -24,7 +24,7 @@
+ # undef memmove
+ 
+ # define SYMBOL_NAME memmove
+-# include "ifunc-lsx.h"
++# include "ifunc-lasx.h"
+ 
+ libc_ifunc_redirected (__redirect_memmove, __new_memmove,
+ 		       IFUNC_SELECTOR ());
+diff --git a/sysdeps/loongarch/lp64/multiarch/memrchr-lasx.S b/sysdeps/loongarch/lp64/multiarch/memrchr-lasx.S
+new file mode 100644
+index 0000000000..57e1035fb5
+--- /dev/null
++++ b/sysdeps/loongarch/lp64/multiarch/memrchr-lasx.S
+@@ -0,0 +1,114 @@
++#ifdef _LIBC
++#include <sysdep.h>
++#include <sys/regdef.h>
++#include <sys/asm.h>
++#else
++#include <sys/asm.h>
++#include <sys/regdef.h>
++#endif
++
++#if IS_IN (libc)
++
++#ifndef MEMRCHR
++#define MEMRCHR	__memrchr_lasx
++#endif
++
++LEAF(MEMRCHR)
++    .align          6
++    beqz            a2, L(ret0)
++    addi.d          a2, a2, -1
++    add.d           a3, a0, a2
++    andi            t1, a3, 0x3f
++
++    bstrins.d       a3, zero, 5, 0
++    addi.d          t1, t1, 1      # len for unaligned address
++    xvld            $xr0, a3, 0
++    xvld            $xr1, a3, 32
++
++    sub.d           t2, zero, t1
++    li.d            t3, -1
++    xvreplgr2vr.b   $xr2, a1
++    andi            t4, a0, 0x3f
++
++    srl.d           t2, t3, t2
++    xvseq.b         $xr0, $xr0, $xr2
++    xvseq.b         $xr1, $xr1, $xr2
++    xvmsknz.b       $xr0, $xr0
++
++
++    xvmsknz.b       $xr1, $xr1
++    xvpickve.w      $xr3, $xr0, 4
++    xvpickve.w      $xr4, $xr1, 4
++    vilvl.h         $vr0, $vr3, $vr0
++
++    vilvl.h         $vr1, $vr4, $vr1
++    vilvl.w         $vr0, $vr1, $vr0
++    movfr2gr.d      t0, $f0
++    and             t0, t0, t2
++
++    bltu            a2, t1, L(end)
++    bnez            t0, L(found)
++    bstrins.d       a0, zero, 5, 0
++L(loop):
++    xvld            $xr0, a3, -64
++
++    xvld            $xr1, a3, -32
++    addi.d          a3, a3, -64
++    xvseq.b         $xr0, $xr0, $xr2
++    xvseq.b         $xr1, $xr1, $xr2
++
++
++    beq             a0, a3, L(out)
++    xvmax.bu        $xr3, $xr0, $xr1
++    xvseteqz.v      $fcc0, $xr3
++    bcnez           $fcc0, L(loop)
++
++    xvmsknz.b       $xr0, $xr0
++    xvmsknz.b       $xr1, $xr1
++    xvpickve.w      $xr3, $xr0, 4
++    xvpickve.w      $xr4, $xr1, 4
++
++    vilvl.h         $vr0, $vr3, $vr0
++    vilvl.h         $vr1, $vr4, $vr1
++    vilvl.w         $vr0, $vr1, $vr0
++    movfr2gr.d      t0, $f0
++
++L(found):
++    addi.d          a0, a3, 63
++    clz.d           t1, t0
++    sub.d           a0, a0, t1
++    jr              ra
++
++
++L(out):
++    xvmsknz.b       $xr0, $xr0
++    xvmsknz.b       $xr1, $xr1
++    xvpickve.w      $xr3, $xr0, 4
++    xvpickve.w      $xr4, $xr1, 4
++
++    vilvl.h         $vr0, $vr3, $vr0
++    vilvl.h         $vr1, $vr4, $vr1
++    vilvl.w         $vr0, $vr1, $vr0
++    movfr2gr.d      t0, $f0
++
++L(end):
++    sll.d           t2, t3, t4
++    and             t0, t0, t2
++    addi.d          a0, a3, 63
++    clz.d           t1, t0
++
++    sub.d           a0, a0, t1
++    maskeqz         a0, a0, t0
++    jr              ra
++L(ret0):
++    move            a0, zero
++
++
++    jr              ra
++END(MEMRCHR)
++
++#ifdef _LIBC
++libc_hidden_builtin_def (MEMRCHR)
++#endif
++
++#endif
+diff --git a/sysdeps/loongarch/lp64/multiarch/memset-lasx.S b/sysdeps/loongarch/lp64/multiarch/memset-lasx.S
+index 79c52896f7..1bd2dda9f6 100644
+--- a/sysdeps/loongarch/lp64/multiarch/memset-lasx.S
++++ b/sysdeps/loongarch/lp64/multiarch/memset-lasx.S
+@@ -7,321 +7,126 @@
+ #include <sys/regdef.h>
+ #endif
+ 
+-#define XVXOR_V(xd,xj,xk)       .word(0x1d<<26|0x09<<21|0x0E<<15|(xk&0x1f)<<10|(xj&0x1f)<<5|(xd&0x1f))
+-#define XVREPLVE0_B(xd,xj)      .word(0x1d<<26|0x18<<21|0x0E<<15|0x0<<10|(xj&0x1f)<<5|(xd&0x1f))
+-#define XVST(xd,rj,si12)        .word(0x0b<<26|0x3<<22|(si12&0xfff)<<10|(rj&0x1f)<<5|(xd&0x1f))
+-#define VST(vd,rj,si12)         .word(0x0b<<26|0x1<<22|(si12&0xfff)<<10|(rj&0x1f)<<5|(vd&0x1f))
+-#define VSTELM_D(vd,rj,si8,idx) .word(0x31<<24|0x2<<19|(idx&0x1)<<18|(si8&0xff)<<10|(rj&0x1f)<<5|(vd&0x1f))
+-#define VSTELM_W(vd,rj,si8,idx) .word(0x31<<24|0x2<<20|(idx&0x3)<<18|(si8&0xff)<<10|(rj&0x1f)<<5|(vd&0x1f))
+-#define VSTELM_H(vd,rj,si8,idx) .word(0x31<<24|0x2<<21|(idx&0x7)<<18|(si8&0xff)<<10|(rj&0x1f)<<5|(vd&0x1f))
+-#define VSTELM_B(vd,rj,si8,idx) .word(0x31<<24|0x2<<22|(idx&0xf)<<18|(si8&0xff)<<10|(rj&0x1f)<<5|(vd&0x1f))
+-
+-//offset(10b) -> si12
+-
+-//1st var: void *str  $4 a0
+-//2nd var: int val  $5   a1
+-//3rd var: size_t num  $6  a2
+-
+ #if IS_IN (libc)
+ 
+-#define MEMSET_NAME __memset_lasx
+-
+-#ifdef ANDROID_CHANGES
+-LEAF(MEMSET_NAME, 0)
+-#else
+-LEAF(MEMSET_NAME)
+-#endif
+-
+-	.align	6
+-	XVXOR_V(0,0,0)
+-	XVXOR_V(1,1,1)
+-  	#dmtc1	a1, $f1  # 32bit, 2nd var; or use FILL.d inst  ###use FILL.d inst, replacing dmtc1 inst probably needs multiple insts
+-  	#FILL.D $w0, a1
+-  	#XVREPLGR2VR.B $w1, a1
+-  	.word(0x1da7c0<<10|(0x5&0x1f)<<5|(0x1&0x1f))
+-
+-	add.d	t7, a0, a2 # dest, 1st var, 3rd var
+-	move	t0, a0      # $2, func return value  "v0->a0 v1->a1" need another register to store original parameters
+-	XVREPLVE0_B(0,1)  # w0 <- w1
+-	srai.d	t8, a2, 4  #num/16
+-	beqz	t8, less_16bytes       # num<16
+-	nop
+-	srai.d	t8, a2, 8  #num/256
+-	bnez	t8, eqormore_256bytes  #num>256
+-	nop
+-	srai.d	t8, a2, 7
+-	beqz	t8, less_128bytes	#num<128_
+-	nop
+-	XVST( 0, 4, 0 )  # 128<num<256
+-	XVST( 0, 4, 32 )
+-	XVST( 0, 4, 64 )
+-	XVST( 0, 4, 96 )
+-	XVST( 0, 19, -128 )
+-	XVST( 0, 19, -96 )
+-	XVST( 0, 19, -64 )
+-	XVST( 0, 19, -32 )
+-
+-	jr	ra
+-	nop
+-
+-less_128bytes:
+-	srai.d	t8, a2, 6  #num/64
+-	beqz	t8, less_64bytes
+-	nop
+-	XVST( 0, 4, 0 )
+-	XVST( 0, 4, 32 )
+-	XVST( 0, 19, -64 )
+-	XVST( 0, 19, -32 )
+-
+-	jr	ra
+-	nop
+-
+-less_64bytes:
+-	srai.d	t8, a2, 5 #num/32
+-	beqz	t8, less_32bytes
+-	nop
+-	XVST( 0, 4, 0 )
+-	XVST( 0, 19, -32 )
+-
+-	jr	ra
+-	nop
++#define MEMSET	__memset_lasx
++
++LEAF(MEMSET)
++    .align          6
++    li.d            t1, 32
++    move            a3, a0
++    xvreplgr2vr.b   $xr0, a1
++    add.d           a4, a0, a2
++
++    bgeu            t1, a2, L(less_32bytes) # len <= 32
++    li.d            t3, 128
++    li.d            t2, 64
++    blt             t3, a2, L(long_bytes)   # len > 128
++
++L(less_128bytes):
++    bgeu            t2, a2, L(less_64bytes) # len <= 64
++    xvst            $xr0, a3, 0
++    xvst            $xr0, a3, 32
++    xvst            $xr0, a4, -32
++
++    xvst            $xr0, a4, -64
++    jr              ra
++L(less_64bytes):
++    xvst            $xr0, a3, 0
++    xvst            $xr0, a4, -32
++
++
++    jr              ra
++L(less_32bytes):
++    srli.d          t0, a2, 4
++    beqz            t0, L(less_16bytes)
++    vst             $vr0, a3, 0
++
++    vst             $vr0, a4, -16
++    jr              ra
++L(less_16bytes):
++    srli.d          t0, a2, 3
++    beqz            t0, L(less_8bytes)
++
++    vstelm.d        $vr0, a3, 0, 0
++    vstelm.d        $vr0, a4, -8, 0
++    jr              ra
++L(less_8bytes):
++    srli.d          t0, a2, 2
++
++    beqz            t0, L(less_4bytes)
++    vstelm.w        $vr0, a3, 0, 0
++    vstelm.w        $vr0, a4, -4, 0
++    jr              ra
++
++
++L(less_4bytes):
++    srli.d          t0, a2, 1
++    beqz            t0, L(less_2bytes)
++    vstelm.h        $vr0, a3, 0, 0
++    vstelm.h        $vr0, a4, -2, 0
++
++    jr              ra
++L(less_2bytes):
++    beqz            a2, L(less_1bytes)
++    st.b            a1, a3, 0
++L(less_1bytes):
++    jr              ra
++
++L(long_bytes):
++    xvst            $xr0, a3, 0
++    bstrins.d       a3, zero, 4, 0
++    addi.d          a3, a3, 32
++    sub.d           a2, a4, a3
++
++    andi            t0, a2, 0xff
++    beq             t0, a2, L(long_end)
++    move            a2, t0
++    sub.d           t0, a4, t0
++
++
++L(loop_256):
++    xvst            $xr0, a3, 0
++    xvst            $xr0, a3, 32
++    xvst            $xr0, a3, 64
++    xvst            $xr0, a3, 96
++
++    xvst            $xr0, a3, 128
++    xvst            $xr0, a3, 160
++    xvst            $xr0, a3, 192
++    xvst            $xr0, a3, 224
++
++    addi.d          a3, a3, 256
++    bne             a3, t0, L(loop_256)
++L(long_end):
++    bltu            a2, t3, L(end_less_128)
++    addi.d          a2, a2, -128
++
++    xvst            $xr0, a3, 0
++    xvst            $xr0, a3, 32
++    xvst            $xr0, a3, 64
++    xvst            $xr0, a3, 96
++
++
++    addi.d          a3, a3, 128
++L(end_less_128):
++    bltu            a2, t2, L(end_less_64)
++    addi.d          a2, a2, -64
++    xvst            $xr0, a3, 0
++
++    xvst            $xr0, a3, 32
++    addi.d          a3, a3, 64
++L(end_less_64):
++    bltu            a2, t1, L(end_less_32)
++    xvst            $xr0, a3, 0
++
++L(end_less_32):
++    xvst            $xr0, a4, -32
++    jr              ra
++END(MEMSET)
+ 
+-less_32bytes:
+-	VST( 0, 4, 0 )
+-	VST( 0, 19, -16 )
+-	jr	ra
+-	nop
+-
+-less_16bytes:
+-	srai.d	t8, a2, 3 #num/8
+-	beqz	t8, less_8bytes
+-	nop
+-	//sdc1	$f0, 0(a0)	#store lower 8bytes to mem
+-	//sdc1	$f0, -8($15)	#store lower 8bytes to mem
+-	VSTELM_D (0, 4,  0,  0)      #store lower 8bytes to mem
+-	VSTELM_D (0, 19, -1, 0)	#store lower 8bytes to mem
+-	jr	ra
+-	nop
+-
+-less_8bytes:
+-	srai.d	t8, a2, 2
+-	beqz	t8, less_4bytes
+-	nop
+-	//swc1	$f0, 0(a0)	#store lower 4bytes to mem
+-	//swc1	$f0, -4($15)	#store lower 4bytes to mem
+-	VSTELM_W (0, 4,  0,  0)      #store lower 4bytes to mem
+-	VSTELM_W (0, 19, -1, 0)	#store lower 4bytes to mem
+-	jr	ra
+-	nop
+-
+-less_4bytes:
+-	//mfc1	$25, $f0   #uesless
+-	srai.d	t8, a2, 1
+-	beqz	t8, less_2bytes
+-	nop
+-	//sh	$25, 0(a0)	#store lower 2bytes to mem
+-	//sh	$25, -2($15)	#store lower 2bytes to mem
+-	VSTELM_H (0, 4,  0,  0)      #store lower 2bytes to mem
+-	VSTELM_H (0, 19, -1, 0)	#store lower 2bytes to mem
+-	jr	ra
+-	nop
+-
+-less_2bytes:
+-	//beqz	t8, less_1bytes
+-	beqz	a2, less_1bytes
+-	nop
+-	//sb	$25, 0(a0)	#store lower 1bytes to mem
+-	VSTELM_B (0, 4,  0,  0)      #store lower 1bytes to mem
+-	jr	ra
+-	nop
+-
+-less_1bytes:
+-	jr	ra
+-	nop
+-
+-
+-eqormore_256bytes:
+-	// andi	a0, a0, -0x20
+-	srli.d	a0, a0, 5
+-	slli.d	a0, a0, 5     # a0:
+-	addi.d	a0, a0,  0x20  #align to 32   no implememt for daddi
+-	XVST( 0, 12, 0 )    # unaligned data
+-	sub.d	t2, t0,  a0    # $2:start addr a0 > t0   t0-a0 < 0  no operation for overflow
+-	add.d	t2, t2, a2     # a2:num
+-	addi.d	t2, t2, -0x80    # used in loop_less
+-	srai.d	t8, t2, 12     #t2/4096
+-	beqz	t8, loop_less
+-	nop
+-
+-loop_more:                   # t8 >0
+-	XVST( 0, 4, 0 )
+-	XVST( 0, 4, 32 )
+-	XVST( 0, 4, 64 )
+-	XVST( 0, 4, 96 )
+-	XVST( 0, 4, 128 )
+-	XVST( 0, 4, 160 )
+-	XVST( 0, 4, 192 )
+-	XVST( 0, 4, 224 )
+-	XVST( 0, 4, 256 )
+-	XVST( 0, 4, 288 )
+-	XVST( 0, 4, 320 )
+-	XVST( 0, 4, 352 )
+-	XVST( 0, 4, 384 )
+-	XVST( 0, 4, 416 )
+-	XVST( 0, 4, 448 )
+-	XVST( 0, 4, 480 )
+-	addi.d	a0,  a0,   512   #1
+-	XVST( 0, 4, 0 )
+-	XVST( 0, 4, 32 )
+-	XVST( 0, 4, 64 )
+-	XVST( 0, 4, 96 )
+-	XVST( 0, 4, 128 )
+-	XVST( 0, 4, 160 )
+-	XVST( 0, 4, 192 )
+-	XVST( 0, 4, 224 )
+-	XVST( 0, 4, 256 )
+-	XVST( 0, 4, 288 )
+-	XVST( 0, 4, 320 )
+-	XVST( 0, 4, 352 )
+-	XVST( 0, 4, 384 )
+-	XVST( 0, 4, 416 )
+-	XVST( 0, 4, 448 )
+-	XVST( 0, 4, 480 )
+-	addi.d	a0,  a0,   512  #2
+-	XVST( 0, 4, 0 )
+-	XVST( 0, 4, 32 )
+-	XVST( 0, 4, 64 )
+-	XVST( 0, 4, 96 )
+-	XVST( 0, 4, 128 )
+-	XVST( 0, 4, 160 )
+-	XVST( 0, 4, 192 )
+-	XVST( 0, 4, 224 )
+-	XVST( 0, 4, 256 )
+-	XVST( 0, 4, 288 )
+-	XVST( 0, 4, 320 )
+-	XVST( 0, 4, 352 )
+-	XVST( 0, 4, 384 )
+-	XVST( 0, 4, 416 )
+-	XVST( 0, 4, 448 )
+-	XVST( 0, 4, 480 )
+-	addi.d	a0,  a0,   512  #3
+-	XVST( 0, 4, 0 )
+-	XVST( 0, 4, 32 )
+-	XVST( 0, 4, 64 )
+-	XVST( 0, 4, 96 )
+-	XVST( 0, 4, 128 )
+-	XVST( 0, 4, 160 )
+-	XVST( 0, 4, 192 )
+-	XVST( 0, 4, 224 )
+-	XVST( 0, 4, 256 )
+-	XVST( 0, 4, 288 )
+-	XVST( 0, 4, 320 )
+-	XVST( 0, 4, 352 )
+-	XVST( 0, 4, 384 )
+-	XVST( 0, 4, 416 )
+-	XVST( 0, 4, 448 )
+-	XVST( 0, 4, 480 )
+-	addi.d	a0,  a0,   512  #4
+-	XVST( 0, 4, 0 )
+-	XVST( 0, 4, 32 )
+-	XVST( 0, 4, 64 )
+-	XVST( 0, 4, 96 )
+-	XVST( 0, 4, 128 )
+-	XVST( 0, 4, 160 )
+-	XVST( 0, 4, 192 )
+-	XVST( 0, 4, 224 )
+-	XVST( 0, 4, 256 )
+-	XVST( 0, 4, 288 )
+-	XVST( 0, 4, 320 )
+-	XVST( 0, 4, 352 )
+-	XVST( 0, 4, 384 )
+-	XVST( 0, 4, 416 )
+-	XVST( 0, 4, 448 )
+-	XVST( 0, 4, 480 )
+-	addi.d	a0,  a0,   512  #5
+-	XVST( 0, 4, 0 )
+-	XVST( 0, 4, 32 )
+-	XVST( 0, 4, 64 )
+-	XVST( 0, 4, 96 )
+-	XVST( 0, 4, 128 )
+-	XVST( 0, 4, 160 )
+-	XVST( 0, 4, 192 )
+-	XVST( 0, 4, 224 )
+-	XVST( 0, 4, 256 )
+-	XVST( 0, 4, 288 )
+-	XVST( 0, 4, 320 )
+-	XVST( 0, 4, 352 )
+-	XVST( 0, 4, 384 )
+-	XVST( 0, 4, 416 )
+-	XVST( 0, 4, 448 )
+-	XVST( 0, 4, 480 )
+-	addi.d	a0,  a0,   512  #6
+-	XVST( 0, 4, 0 )
+-	XVST( 0, 4, 32 )
+-	XVST( 0, 4, 64 )
+-	XVST( 0, 4, 96 )
+-	XVST( 0, 4, 128 )
+-	XVST( 0, 4, 160 )
+-	XVST( 0, 4, 192 )
+-	XVST( 0, 4, 224 )
+-	XVST( 0, 4, 256 )
+-	XVST( 0, 4, 288 )
+-	XVST( 0, 4, 320 )
+-	XVST( 0, 4, 352 )
+-	XVST( 0, 4, 384 )
+-	XVST( 0, 4, 416 )
+-	XVST( 0, 4, 448 )
+-	XVST( 0, 4, 480 )
+-	addi.d	a0,  a0,   512  #7
+-	XVST( 0, 4, 0 )
+-	XVST( 0, 4, 32 )
+-	XVST( 0, 4, 64 )
+-	XVST( 0, 4, 96 )
+-	XVST( 0, 4, 128 )
+-	XVST( 0, 4, 160 )
+-	XVST( 0, 4, 192 )
+-	XVST( 0, 4, 224 )
+-	XVST( 0, 4, 256 )
+-	XVST( 0, 4, 288 )
+-	XVST( 0, 4, 320 )
+-	XVST( 0, 4, 352 )
+-	XVST( 0, 4, 384 )
+-	XVST( 0, 4, 416 )
+-	XVST( 0, 4, 448 )
+-	XVST( 0, 4, 480 )
+-	addi.d	a0,  a0,   512  #8
+-	addi.d	t8, t8, -1
+-	bnez	t8, loop_more
+-	nop
+-  #andi	t2, t2, 4095   replaced with two insts
+-  lu12i.w t3, 1        #get imm 1<<12
+-  addi.d t3, t3, -1
+-  and t2, t2, t3
+-
+-loop_less:			# t8 = 0
+-	XVST( 0, 4, 0 )
+-	XVST( 0, 4, 32 )
+-	XVST( 0, 4, 64 )
+-	XVST( 0, 4, 96 )
+-	addi.d	a0,  a0,   0x80
+-	addi.d	t2, t2, -0x80
+-	slt	t8, t2, zero
+-	beqz	t8, loop_less
+-	nop
+-	XVST( 0, 19, -128 )
+-	XVST( 0, 19, -96 )
+-	XVST( 0, 19, -64 )
+-	XVST( 0, 19, -32 )
+-
+-  move	v0, t0  #change a0 only in eqormore_256bytes fragmemt, need restore from t0
+-	jr	ra
+-	nop
+-END(MEMSET_NAME)
+-
+-#ifndef ANDROID_CHANGES
+ #ifdef _LIBC
+-libc_hidden_builtin_def (MEMSET_NAME)
+-#endif
++libc_hidden_builtin_def (MEMSET)
+ #endif
+ 
+ #endif
+diff --git a/sysdeps/loongarch/lp64/multiarch/rawmemchr-lasx.S b/sysdeps/loongarch/lp64/multiarch/rawmemchr-lasx.S
+new file mode 100644
+index 0000000000..bff92969b8
+--- /dev/null
++++ b/sysdeps/loongarch/lp64/multiarch/rawmemchr-lasx.S
+@@ -0,0 +1,51 @@
++#include <sysdep.h>
++#include <sys/asm.h>
++
++#if IS_IN (libc)
++
++# define RAWMEMCHR __rawmemchr_lasx
++
++LEAF(RAWMEMCHR)
++    .align          6
++    move            a2, a0
++    bstrins.d       a0, zero, 4, 0
++    xvld            $xr0, a0, 0
++    xvreplgr2vr.b   $xr1, a1
++
++    xvseq.b         $xr0, $xr0, $xr1
++    xvmsknz.b       $xr0, $xr0
++    xvpickve.w      $xr2, $xr0, 4
++    vilvl.h         $vr0, $vr2, $vr0
++
++    movfr2gr.s      t0, $f0
++    sra.w           t0, t0, a2
++    beqz            t0, L(loop)
++    ctz.w           t0, t0
++
++    add.d           a0, a2, t0
++    jr              ra
++    nop
++    nop
++
++L(loop):
++    xvld            $xr0, a0, 32
++    addi.d          a0, a0, 32
++    xvseq.b         $xr0, $xr0, $xr1
++    xvseteqz.v      $fcc0, $xr0
++
++    bcnez           $fcc0, L(loop)
++    xvmsknz.b       $xr0, $xr0
++    xvpickve.w      $xr1, $xr0, 4
++    vilvl.h         $vr0, $vr1, $vr0
++
++    movfr2gr.s      t0, $f0
++    ctz.w           t0, t0
++    add.d           a0, a0, t0
++    jr              ra
++END(RAWMEMCHR)
++
++#ifdef _LIBC
++libc_hidden_builtin_def (RAWMEMCHR)
++#endif
++
++#endif
+diff --git a/sysdeps/loongarch/lp64/multiarch/stpcpy.c b/sysdeps/loongarch/lp64/multiarch/stpcpy.c
+index 96a417ae25..531a3ed6c4 100644
+--- a/sysdeps/loongarch/lp64/multiarch/stpcpy.c
++++ b/sysdeps/loongarch/lp64/multiarch/stpcpy.c
+@@ -28,7 +28,7 @@
+ # undef __stpcpy
+ 
+ # define SYMBOL_NAME stpcpy
+-# include "ifunc-memchr.h"
++# include "ifunc-stpcpy.h"
+ 
+ libc_ifunc_redirected (__redirect_stpcpy, __stpcpy, IFUNC_SELECTOR ());
+ 
+diff --git a/sysdeps/loongarch/lp64/multiarch/strchr-lasx.S b/sysdeps/loongarch/lp64/multiarch/strchr-lasx.S
+new file mode 100644
+index 0000000000..61186aa251
+--- /dev/null
++++ b/sysdeps/loongarch/lp64/multiarch/strchr-lasx.S
+@@ -0,0 +1,68 @@
++#ifdef _LIBC
++#include <sysdep.h>
++#include <sys/regdef.h>
++#include <sys/asm.h>
++#else
++#include <sys/asm.h>
++#include <sys/regdef.h>
++#endif
++
++#if IS_IN (libc)
++
++#ifndef AS_STRCHRNUL
++#define STRCHR	__strchr_lasx
++#endif
++
++LEAF(STRCHR)
++    .align          6
++    andi            t1, a0, 0x1f
++    bstrins.d       a0, zero, 4, 0
++    xvld            $xr0, a0, 0
++    li.d            t2, -1
++
++    xvreplgr2vr.b   $xr1, a1
++    sll.d           t1, t2, t1
++    xvxor.v         $xr2, $xr0, $xr1
++    xvmin.bu        $xr0, $xr0, $xr2
++
++    xvmsknz.b       $xr0, $xr0
++    xvpickve.w      $xr3, $xr0, 4
++    vilvl.h         $vr0, $vr3, $vr0
++    movfr2gr.s      t0, $f0
++
++    orn             t0, t0, t1
++    bne             t0, t2, L(end)
++L(loop):
++    xvld            $xr0, a0, 32
++    addi.d          a0, a0, 32
++
++
++    xvxor.v         $xr2, $xr0, $xr1
++    xvmin.bu        $xr0, $xr0, $xr2
++    xvsetanyeqz.b   $fcc0, $xr0
++    bceqz           $fcc0, L(loop)
++
++    xvmsknz.b       $xr0, $xr0
++    xvpickve.w      $xr1, $xr0, 4
++    vilvl.h         $vr0, $vr1, $vr0
++    movfr2gr.s      t0, $f0
++
++L(end):
++    cto.w           t0, t0
++    add.d           a0, a0, t0
++#ifndef AS_STRCHRNUL
++    vreplgr2vr.b    $vr0, t0
++    xvpermi.q       $xr3, $xr2, 1
++
++    vshuf.b         $vr0, $vr3, $vr2, $vr0
++    vpickve2gr.bu   t0, $vr0, 0
++    masknez         a0, a0, t0
++#endif
++    jr              ra
++END(STRCHR)
++
++#ifdef _LIBC
++libc_hidden_builtin_def(STRCHR)
++#endif
++
++#endif
+diff --git a/sysdeps/loongarch/lp64/multiarch/strchr.c b/sysdeps/loongarch/lp64/multiarch/strchr.c
+index 7810df5a9e..16d6f78f85 100644
+--- a/sysdeps/loongarch/lp64/multiarch/strchr.c
++++ b/sysdeps/loongarch/lp64/multiarch/strchr.c
+@@ -24,7 +24,7 @@
+ # undef strchr
+ 
+ # define SYMBOL_NAME strchr
+-# include "ifunc-lsx.h"
++# include "ifunc-lasx.h"
+ 
+ libc_ifunc_redirected (__redirect_strchr, __new_strchr,
+ 		       IFUNC_SELECTOR ());
+diff --git a/sysdeps/loongarch/lp64/multiarch/strchrnul-lasx.S b/sysdeps/loongarch/lp64/multiarch/strchrnul-lasx.S
+new file mode 100644
+index 0000000000..f876541300
+--- /dev/null
++++ b/sysdeps/loongarch/lp64/multiarch/strchrnul-lasx.S
+@@ -0,0 +1,4 @@
++#define STRCHR __strchrnul_lasx
++#define AS_STRCHRNUL
++#include "strchr-lasx.S"
++
+diff --git a/sysdeps/loongarch/lp64/multiarch/strchrnul.c b/sysdeps/loongarch/lp64/multiarch/strchrnul.c
+index bd7b65afb0..53a7273afe 100644
+--- a/sysdeps/loongarch/lp64/multiarch/strchrnul.c
++++ b/sysdeps/loongarch/lp64/multiarch/strchrnul.c
+@@ -26,7 +26,7 @@
+ # undef strchrnul
+ 
+ # define SYMBOL_NAME strchrnul
+-# include "ifunc-lsx.h"
++# include "ifunc-lasx.h"
+ 
+ libc_ifunc_redirected (__redirect_strchrnul, __strchrnul,
+                        IFUNC_SELECTOR ());
+diff --git a/sysdeps/loongarch/lp64/multiarch/strlen-lasx.S b/sysdeps/loongarch/lp64/multiarch/strlen-lasx.S
+new file mode 100644
+index 0000000000..cb276aa012
+--- /dev/null
++++ b/sysdeps/loongarch/lp64/multiarch/strlen-lasx.S
+@@ -0,0 +1,55 @@
++#ifdef _LIBC
++#include <sysdep.h>
++#include <sys/regdef.h>
++#include <sys/asm.h>
++#else
++#include <sys/asm.h>
++#include <sys/regdef.h>
++#endif
++
++#if IS_IN (libc)
++
++#define STRLEN	__strlen_lasx
++
++/* size_t strlen(const char *s1); */
++
++LEAF(STRLEN)
++    .align          6
++    move            a1, a0
++    bstrins.d       a0, zero, 4, 0
++    li.d            t1, -1
++    xvld            $xr0, a0, 0
++
++    xvmsknz.b       $xr0, $xr0
++    xvpickve.w      $xr1, $xr0, 4
++    vilvl.h         $vr0, $vr1, $vr0
++    movfr2gr.s      t0, $f0  # sign extend
++
++    sra.w           t0, t0, a1
++    beq             t0, t1, L(loop)
++    cto.w           a0, t0
++    jr              ra
++
++L(loop):
++    xvld            $xr0, a0, 32
++    addi.d          a0, a0, 32
++    xvsetanyeqz.b   $fcc0, $xr0
++    bceqz           $fcc0, L(loop)
++
++
++    xvmsknz.b       $xr0, $xr0
++    sub.d           a0, a0, a1
++    xvpickve.w      $xr1, $xr0, 4
++    vilvl.h         $vr0, $vr1, $vr0
++
++    movfr2gr.s      t0, $f0
++    cto.w           t0, t0
++    add.d           a0, a0, t0
++    jr              ra
++END(STRLEN)
++
++#ifdef _LIBC
++libc_hidden_builtin_def (STRLEN)
++#endif
++
++#endif
+diff --git a/sysdeps/loongarch/lp64/multiarch/strlen.c b/sysdeps/loongarch/lp64/multiarch/strlen.c
+index e08f32f29f..e84544045e 100644
+--- a/sysdeps/loongarch/lp64/multiarch/strlen.c
++++ b/sysdeps/loongarch/lp64/multiarch/strlen.c
+@@ -24,7 +24,7 @@
+ # undef strlen
+ 
+ # define SYMBOL_NAME strlen
+-# include "ifunc-lsx.h"
++# include "ifunc-lasx.h"
+ 
+ libc_ifunc_redirected (__redirect_strlen, __new_strlen,
+ 		       IFUNC_SELECTOR ());
+diff --git a/sysdeps/loongarch/lp64/multiarch/strnlen-lasx.S b/sysdeps/loongarch/lp64/multiarch/strnlen-lasx.S
+new file mode 100644
+index 0000000000..8c30f10c8c
+--- /dev/null
++++ b/sysdeps/loongarch/lp64/multiarch/strnlen-lasx.S
+@@ -0,0 +1,92 @@
++#ifdef _LIBC
++#include <sysdep.h>
++#include <sys/regdef.h>
++#include <sys/asm.h>
++#else
++#include <sys/asm.h>
++#include <sys/regdef.h>
++#endif
++
++#if IS_IN (libc)
++
++#define STRNLEN	__strnlen_lasx
++
++/* size_t strnlen (const char *s1, size_t maxlen); */
++
++LEAF(STRNLEN)
++    .align          6
++    beqz            a1, L(ret0)
++    andi            t1, a0, 0x3f
++    li.d            t3, 65
++    sub.d           a2, a0, t1
++
++    xvld            $xr0, a2, 0
++    xvld            $xr1, a2, 32
++    sub.d           t1, t3, t1
++    move            a3, a0
++
++    sltu            t1, a1, t1
++    xvmsknz.b       $xr0, $xr0
++    xvmsknz.b       $xr1, $xr1
++    xvpickve.w      $xr2, $xr0, 4
++
++    xvpickve.w      $xr3, $xr1, 4
++    vilvl.h         $vr0, $vr2, $vr0
++    vilvl.h         $vr1, $vr3, $vr1
++    vilvl.w         $vr0, $vr1, $vr0
++
++
++    movfr2gr.d      t0, $f0
++    sra.d           t0, t0, a0
++    orn             t1, t1, t0
++    bnez            t1, L(end)
++
++    add.d           a4, a0, a1
++    move            a0, a2
++    addi.d          a4, a4, -1
++    bstrins.d       a4, zero, 5, 0
++
++L(loop):
++    xvld            $xr0, a0, 64
++    xvld            $xr1, a0, 96
++    addi.d          a0, a0, 64
++    beq             a0, a4, L(out)
++
++    xvmin.bu        $xr2, $xr0, $xr1
++    xvsetanyeqz.b   $fcc0, $xr2
++    bceqz           $fcc0, L(loop)
++L(out):
++    xvmsknz.b       $xr0, $xr0
++
++
++    xvmsknz.b       $xr1, $xr1
++    xvpickve.w      $xr2, $xr0, 4
++    xvpickve.w      $xr3, $xr1, 4
++    vilvl.h         $vr0, $vr2, $vr0
++
++    vilvl.h         $vr1, $vr3, $vr1
++    vilvl.w         $vr0, $vr1, $vr0
++    movfr2gr.d      t0, $f0
++L(end):
++    sub.d           a0, a0, a3
++
++    cto.d           t0, t0
++    add.d           a0, a0, t0
++    sltu            t1, a0, a1
++    masknez         t0, a1, t1
++
++    maskeqz         t1, a0, t1
++    or              a0, t0, t1
++    jr              ra
++L(ret0):
++    move            a0, zero
++
++
++    jr              ra
++END(STRNLEN)
++
++#ifdef _LIBC
++libc_hidden_def (STRNLEN)
++#endif
++
++#endif
+diff --git a/sysdeps/loongarch/lp64/multiarch/strnlen.c b/sysdeps/loongarch/lp64/multiarch/strnlen.c
+index 4436bd41ed..6fc406d221 100644
+--- a/sysdeps/loongarch/lp64/multiarch/strnlen.c
++++ b/sysdeps/loongarch/lp64/multiarch/strnlen.c
+@@ -26,7 +26,7 @@
+ # undef strnlen
+ 
+ # define SYMBOL_NAME strnlen
+-# include "ifunc-lsx.h"
++# include "ifunc-lasx.h"
+ 
+ libc_ifunc_redirected (__redirect_strnlen, __strnlen, IFUNC_SELECTOR ());
+ weak_alias (__strnlen, strnlen);
+diff --git a/sysdeps/loongarch/lp64/multiarch/strrchr-lasx.S b/sysdeps/loongarch/lp64/multiarch/strrchr-lasx.S
+new file mode 100644
+index 0000000000..6f7a56184c
+--- /dev/null
++++ b/sysdeps/loongarch/lp64/multiarch/strrchr-lasx.S
+@@ -0,0 +1,113 @@
++#ifdef _LIBC
++#include <sysdep.h>
++#include <sys/regdef.h>
++#include <sys/asm.h>
++#else
++#include <sys/asm.h>
++#include <sys/regdef.h>
++#endif
++
++#if IS_IN (libc)
++
++#define STRRCHR __strrchr_lasx
++
++LEAF(STRRCHR)
++    .align          6
++    andi            t1, a0, 0x3f
++    bstrins.d       a0, zero, 5, 0
++    xvld            $xr0, a0, 0
++    xvld            $xr1, a0, 32
++
++    li.d            t2, -1
++    xvreplgr2vr.b   $xr4, a1
++    move            a2, zero
++    sll.d           t3, t2, t1
++
++    addi.d          a0, a0, 63
++    xvseq.b         $xr2, $xr0, $xr4
++    xvseq.b         $xr3, $xr1, $xr4
++    xvmsknz.b       $xr0, $xr0
++
++    xvmsknz.b       $xr1, $xr1
++    xvpickve.w      $xr5, $xr0, 4
++    xvpickve.w      $xr6, $xr1, 4
++    vilvl.h         $vr0, $vr5, $vr0
++
++
++    vilvl.h         $vr1, $vr6, $vr1
++    xvmsknz.b       $xr2, $xr2
++    xvmsknz.b       $xr3, $xr3
++    xvpickve.w      $xr5, $xr2, 4
++
++    xvpickve.w      $xr6, $xr3, 4
++    vilvl.h         $vr2, $vr5, $vr2
++    vilvl.h         $vr3, $vr6, $vr3
++    vilvl.w         $vr0, $vr1, $vr0
++
++    vilvl.w         $vr1, $vr3, $vr2
++    movfr2gr.d      t0, $f0
++    movfr2gr.d      t1, $f1
++    orn             t0, t0, t3
++
++    and             t1, t1, t3
++    bne             t0, t2, L(end)
++L(loop):
++    xvld            $xr0, a0, 1
++    xvld            $xr1, a0, 33
++
++
++    clz.d           t0, t1
++    sub.d           t0, a0, t0
++    addi.d          a0, a0, 64
++    maskeqz         t0, t0, t1
++
++    masknez         t1, a2, t1
++    or              a2, t0, t1
++    xvseq.b         $xr2, $xr0, $xr4
++    xvseq.b         $xr3, $xr1, $xr4
++
++    xvmsknz.b       $xr2, $xr2
++    xvmsknz.b       $xr3, $xr3
++    xvpickve.w      $xr5, $xr2, 4
++    xvpickve.w      $xr6, $xr3, 4
++
++    vilvl.h         $vr2, $vr5, $vr2
++    vilvl.h         $vr3, $vr6, $vr3
++    xvmin.bu        $xr5, $xr0, $xr1
++    vilvl.w         $vr2, $vr3, $vr2
++
++
++    xvsetanyeqz.b   $fcc0, $xr5
++    movfr2gr.d      t1, $f2
++    bceqz           $fcc0, L(loop)
++    xvmsknz.b       $xr0, $xr0
++
++    xvmsknz.b       $xr1, $xr1
++    xvpickve.w      $xr5, $xr0, 4
++    xvpickve.w      $xr6, $xr1, 4
++    vilvl.h         $vr0, $vr5, $vr0
++
++    vilvl.h         $vr1, $vr6, $vr1
++    vilvl.w         $vr0, $vr1, $vr0
++    movfr2gr.d      t0, $f0
++L(end):
++    slli.d          t3, t2, 1   # shift one more for the last '\0'
++
++    cto.d           t0, t0
++    sll.d           t3, t3, t0
++    andn            t1, t1, t3
++    clz.d           t0, t1
++
++    sub.d           a0, a0, t0
++    maskeqz         t0, a0, t1
++    masknez         t1, a2, t1
++    or              a0, t0, t1
++
++    jr              ra
++END(STRRCHR)
++
++#ifdef _LIBC
++libc_hidden_builtin_def(STRRCHR)
++#endif
++
++#endif
+diff --git a/sysdeps/loongarch/lp64/strchr.S b/sysdeps/loongarch/lp64/strchr.S
+index caaacca57c..0bd4264694 100644
+--- a/sysdeps/loongarch/lp64/strchr.S
++++ b/sysdeps/loongarch/lp64/strchr.S
+@@ -90,7 +90,6 @@ L(_mc8_a):
+ END(STRCHR_NAME)
+ 
+ #ifdef _LIBC
+-libc_hidden_builtin_def (STRCHR_NAME)
+ weak_alias (STRCHR_NAME, index)
+ #endif
+ 
+-- 
+2.20.1
+

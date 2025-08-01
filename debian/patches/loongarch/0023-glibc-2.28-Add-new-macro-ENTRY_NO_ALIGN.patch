@@ -1,0 +1,41 @@
+From ff056f0007f54b7750267fa55792607c63e6f601 Mon Sep 17 00:00:00 2001
+From: caiyinyu <caiyinyu@loongson.cn>
+Date: Thu, 16 Feb 2023 15:23:27 +0800
+Subject: [PATCH 23/44] glibc-2.28: Add new macro ENTRY_NO_ALIGN
+
+Change-Id: I09b0dc8c5451eae00df13f5061856a8a24be4834
+---
+ sysdeps/loongarch/sys/asm.h | 13 +++++++++++--
+ 1 file changed, 11 insertions(+), 2 deletions(-)
+
+diff --git a/sysdeps/loongarch/sys/asm.h b/sysdeps/loongarch/sys/asm.h
+index 7f3769bd13..f64bfb2b6c 100644
+--- a/sysdeps/loongarch/sys/asm.h
++++ b/sysdeps/loongarch/sys/asm.h
+@@ -31,12 +31,21 @@
+ 	.text;				\
+ 	.globl	symbol;			\
+ 	.align	3;			\
+-	cfi_startproc ;			\
+ 	.type	symbol, @function;	\
+-symbol:
++symbol: \
++	cfi_startproc;			\
+ 
+ # define ENTRY(symbol) LEAF(symbol)
+ 
++#define	LEAF_NO_ALIGN(symbol)			\
++	.text;				\
++	.globl	symbol;			\
++	.type	symbol, @function;	\
++symbol: \
++	cfi_startproc;
++
++# define ENTRY_NO_ALIGN(symbol) LEAF_NO_ALIGN(symbol)
++
+ /* Mark end of function.  */
+ #undef END
+ #define END(function)			\
+-- 
+2.20.1
+

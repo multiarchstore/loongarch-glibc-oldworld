@@ -1,0 +1,1307 @@
+From 2fddbcdbe356e55e30a3fb4634f8ebf9eae5c3f4 Mon Sep 17 00:00:00 2001
+From: caiyinyu <caiyinyu@loongson.cn>
+Date: Fri, 3 Mar 2023 10:05:06 +0800
+Subject: [PATCH 42/44] glibc-2.28: Add new lsx impls of str/mem funcs and
+ adjust related code
+
+Change-Id: Iba4a0e729b2b61c71f30d9035f9ef40f8fc4228c
+---
+ sysdeps/loongarch/lp64/memcmp.S               |  2 +-
+ sysdeps/loongarch/lp64/multiarch/memchr-lsx.S | 86 ++++++++++--------
+ sysdeps/loongarch/lp64/multiarch/memcmp-lsx.S | 11 +--
+ sysdeps/loongarch/lp64/multiarch/memcpy-lsx.S |  2 +-
+ .../loongarch/lp64/multiarch/memrchr-lsx.S    | 84 ++++++++++--------
+ sysdeps/loongarch/lp64/multiarch/memset-lsx.S | 10 +--
+ .../loongarch/lp64/multiarch/rawmemchr-lsx.S  | 10 +--
+ sysdeps/loongarch/lp64/multiarch/stpcpy-lsx.S | 57 ++++++------
+ sysdeps/loongarch/lp64/multiarch/strchr-lsx.S | 10 +--
+ .../loongarch/lp64/multiarch/strchrnul-lsx.S  |  2 +-
+ sysdeps/loongarch/lp64/multiarch/strcmp-lsx.S | 49 +++++------
+ sysdeps/loongarch/lp64/multiarch/strcpy-lsx.S | 87 +++++++++----------
+ sysdeps/loongarch/lp64/multiarch/strlen-lsx.S | 26 ++++--
+ .../loongarch/lp64/multiarch/strncmp-lsx.S    |  2 +-
+ .../loongarch/lp64/multiarch/strnlen-lsx.S    | 49 ++++++-----
+ .../loongarch/lp64/multiarch/strrchr-lsx.S    | 56 ++++++------
+ 16 files changed, 288 insertions(+), 255 deletions(-)
+
+diff --git a/sysdeps/loongarch/lp64/memcmp.S b/sysdeps/loongarch/lp64/memcmp.S
+index b4e5e534ae..7db75b341b 100644
+--- a/sysdeps/loongarch/lp64/memcmp.S
++++ b/sysdeps/loongarch/lp64/memcmp.S
+@@ -281,4 +281,4 @@ libc_hidden_builtin_def (MEMCMP_NAME)
+ #endif
+ 
+ #undef bcmp
+-weak_alias (memcmp, bcmp)
++weak_alias (MEMCMP_NAME, bcmp)
+diff --git a/sysdeps/loongarch/lp64/multiarch/memchr-lsx.S b/sysdeps/loongarch/lp64/multiarch/memchr-lsx.S
+index 16aa549496..441db534f8 100644
+--- a/sysdeps/loongarch/lp64/multiarch/memchr-lsx.S
++++ b/sysdeps/loongarch/lp64/multiarch/memchr-lsx.S
+@@ -9,71 +9,85 @@
+ 
+ #if IS_IN (libc)
+ 
+-#define MEMCHR_NAME __memchr_lsx
++#define MEMCHR	__memchr_lsx
+ 
+-LEAF(MEMCHR_NAME)
++LEAF(MEMCHR)
+     .align          6
+-    beqz            a2, L(out)
+-    andi            t1, a0, 0x1f
++    beqz            a2, L(ret0)
++    add.d           a3, a0, a2
++    andi            t0, a0, 0x1f
++    bstrins.d       a0, zero, 4, 0
++
++    vld             $vr0, a0, 0
++    vld             $vr1, a0, 16
++    li.d            t1, -1
+     li.d            t2, 32
+-    sub.d           a3, a0, t1
+ 
+-    vld             $vr0, a3, 0
+-    vld             $vr1, a3, 16
+-    sub.d           t2, t2, t1
+     vreplgr2vr.b    $vr2, a1
++    sll.d           t3, t1, t0
++    sub.d           t2, t2, t0
++    vseq.b          $vr0, $vr0, $vr2
+ 
+-    sltu            t3, t2, a2
+-    vxor.v          $vr0, $vr0, $vr2
+-    vxor.v          $vr1, $vr1, $vr2
++    vseq.b          $vr1, $vr1, $vr2
+     vmsknz.b        $vr0, $vr0
+-
+     vmsknz.b        $vr1, $vr1
+-    sltui           t3, t3, 1
+     vilvl.h         $vr0, $vr1, $vr0
+-    movfr2gr.s      t0, $f0
+ 
+ 
+-    sra.w           t0, t0, t1
+-    orn             t1, t3, t0
+-    bnez            t1, L(end)
+-    sub.d           a2, a2, t2
++    movfr2gr.s      t0, $f0
++    and             t0, t0, t3
++    bgeu            t2, a2, L(end)
++    bnez            t0, L(found)
+ 
+-    move            a0, a3
++    addi.d          a4, a3, -1
++    bstrins.d       a4, zero, 4, 0
+ L(loop):
+     vld             $vr0, a0, 32
+     vld             $vr1, a0, 48
+-    addi.d          a0, a0, 32
+ 
+-    sltui           t3, a2, 33
+-    addi.d          a2, a2, -32
+-    vxor.v          $vr0, $vr0, $vr2
+-    vxor.v          $vr1, $vr1, $vr2
++    addi.d          a0, a0, 32
++    vseq.b          $vr0, $vr0, $vr2
++    vseq.b          $vr1, $vr1, $vr2
++    beq             a0, a4, L(out)
+ 
++    vmax.bu         $vr3, $vr0, $vr1
++    vseteqz.v       $fcc0, $vr3
++    bcnez           $fcc0, L(loop)
+     vmsknz.b        $vr0, $vr0
++
++
+     vmsknz.b        $vr1, $vr1
+     vilvl.h         $vr0, $vr1, $vr0
+     movfr2gr.s      t0, $f0
++L(found):
++    ctz.w           t0, t0
+ 
+-
+-    orn             t1, t3, t0
+-    beqz            t1, L(loop)
+-    addi.d          a2, a2, 32
+-L(end):
+-    cto.w           t0, t0
+-
+-    sltu            t1, t0, a2
+     add.d           a0, a0, t0
+-    maskeqz         a0, a0, t1
++    jr              ra
++L(ret0):
++    move            a0, zero
+     jr              ra
+ 
+ L(out):
+-    move            a0, zero
++    vmsknz.b        $vr0, $vr0
++    vmsknz.b        $vr1, $vr1
++    vilvl.h         $vr0, $vr1, $vr0
++    movfr2gr.s      t0, $f0
++
++L(end):
++    sub.d           t2, zero, a3
++    srl.w           t1, t1, t2
++    and             t0, t0, t1
++    ctz.w           t1, t0
++
++
++    add.d           a0, a0, t1
++    maskeqz         a0, a0, t0
+     jr              ra
+-END(MEMCHR_NAME)
++END(MEMCHR)
+ 
+ #ifdef _LIBC
+-libc_hidden_builtin_def (MEMCHR_NAME)
++libc_hidden_builtin_def (MEMCHR)
+ #endif
+ 
+ #endif
+diff --git a/sysdeps/loongarch/lp64/multiarch/memcmp-lsx.S b/sysdeps/loongarch/lp64/multiarch/memcmp-lsx.S
+index c49a5f4c8e..7fd349b657 100644
+--- a/sysdeps/loongarch/lp64/multiarch/memcmp-lsx.S
++++ b/sysdeps/loongarch/lp64/multiarch/memcmp-lsx.S
+@@ -9,7 +9,7 @@
+ 
+ #if IS_IN (libc)
+ 
+-#define MEMCMP_NAME __memcmp_lsx
++#define MEMCMP  __memcmp_lsx
+ 
+ L(magic_num):
+     .align          6
+@@ -17,7 +17,7 @@ L(magic_num):
+     .dword          0x0f0e0d0c0b0a0908
+     nop
+     nop
+-ENTRY_NO_ALIGN(MEMCMP_NAME)
++ENTRY_NO_ALIGN(MEMCMP)
+     beqz            a2, L(out)
+     pcaddi          t0, -7
+ 
+@@ -246,13 +246,10 @@ L(out):
+     move            a0, zero
+     jr              ra
+ 
+-END(MEMCMP_NAME)
++END(MEMCMP)
+ 
+ #ifdef _LIBC
+-libc_hidden_builtin_def (MEMCMP_NAME)
++libc_hidden_builtin_def (MEMCMP)
+ #endif
+ 
+-#undef bcmp
+-weak_alias (MEMCMP_NAME, bcmp)
+-
+ #endif
+diff --git a/sysdeps/loongarch/lp64/multiarch/memcpy-lsx.S b/sysdeps/loongarch/lp64/multiarch/memcpy-lsx.S
+index ec8e783ad5..99d2cc71fc 100644
+--- a/sysdeps/loongarch/lp64/multiarch/memcpy-lsx.S
++++ b/sysdeps/loongarch/lp64/multiarch/memcpy-lsx.S
+@@ -1 +1 @@
+-/* memcpy_lsx is part of memmove_lsx, see memmove-lsx.S.  */
++/* memcpy is part of memmove.S */
+diff --git a/sysdeps/loongarch/lp64/multiarch/memrchr-lsx.S b/sysdeps/loongarch/lp64/multiarch/memrchr-lsx.S
+index 60692e048b..eac2059a9f 100644
+--- a/sysdeps/loongarch/lp64/multiarch/memrchr-lsx.S
++++ b/sysdeps/loongarch/lp64/multiarch/memrchr-lsx.S
+@@ -3,78 +3,94 @@
+ #include <sys/regdef.h>
+ #include <sys/asm.h>
+ #else
++#include <regdef.h>
+ #include <sys/asm.h>
+-#include <sys/regdef.h>
+ #endif
+ 
+ #if IS_IN (libc)
+ 
+-#define MEMRCHR_NAME __memrchr_lsx
++#define MEMRCHR	__memrchr_lsx
+ 
+-LEAF(MEMRCHR_NAME)
++LEAF(MEMRCHR)
+     .align          6
+-    beqz            a2, L(out)
++    beqz            a2, L(ret0)
+     addi.d          a2, a2, -1
+-    add.d           a0, a0, a2
+-    andi            t0, a0, 0x1f
++    add.d           a3, a0, a2
++    andi            t1, a3, 0x1f
+ 
+-    sub.d           a3, a0, t0
+-    addi.d          t2, t0, 1   # len for unaligned address
++    bstrins.d       a3, zero, 4, 0
++    addi.d          t1, t1, 1      # len for unaligned address
+     vld             $vr0, a3, 0
+     vld             $vr1, a3, 16
+ 
+-    sub.d           t3, zero, t2
++    sub.d           t2, zero, t1
++    li.d            t3, -1
+     vreplgr2vr.b    $vr2, a1
+-    sltu            t1, a2, t2
+-    vseq.b          $vr0, $vr0, $vr2
++    andi            t4, a0, 0x1f
+ 
++    srl.d           t2, t3, t2
++    vseq.b          $vr0, $vr0, $vr2
+     vseq.b          $vr1, $vr1, $vr2
+     vmsknz.b        $vr0, $vr0
+-    vmsknz.b        $vr1, $vr1
+-    vilvl.h         $vr0, $vr1, $vr0
+ 
+ 
++    vmsknz.b        $vr1, $vr1
++    vilvl.h         $vr0, $vr1, $vr0
+     movfr2gr.s      t0, $f0
+-    sll.w           t0, t0, t3
+-    or              t1, t0, t1
+-    bnez            t1, L(end)
++    and             t0, t0, t2
+ 
+-    addi.d          a0, a3, 31
+-    sub.d           a2, a2, t2
++    bltu            a2, t1, L(end)
++    bnez            t0, L(found)
++    bstrins.d       a0, zero, 4, 0
+ L(loop):
+-    vld             $vr0, a0, -63
+-    vld             $vr1, a0, -47
++    vld             $vr0, a3, -32
+ 
+-    sltui           t1, a2, 32
+-    addi.d          a0, a0, -32
+-    addi.d          a2, a2, -32
++    vld             $vr1, a3, -16
++    addi.d          a3, a3, -32
+     vseq.b          $vr0, $vr0, $vr2
+-
+     vseq.b          $vr1, $vr1, $vr2
++
++    beq             a0, a3, L(out)
++    vmax.bu         $vr3, $vr0, $vr1
++    vseteqz.v       $fcc0, $vr3
++    bcnez           $fcc0, L(loop)
++
++
+     vmsknz.b        $vr0, $vr0
+     vmsknz.b        $vr1, $vr1
+     vilvl.h         $vr0, $vr1, $vr0
++    movfr2gr.s      t0, $f0
+ 
++L(found):
++    addi.d          a0, a3, 31
++    clz.w           t1, t0
++    sub.d           a0, a0, t1
++    jr              ra
+ 
++L(out):
++    vmsknz.b        $vr0, $vr0
++    vmsknz.b        $vr1, $vr1
++    vilvl.h         $vr0, $vr1, $vr0
+     movfr2gr.s      t0, $f0
+-    or              t1, t0, t1
+-    beqz            t1, L(loop)
+-    addi.d          a2, a2, 32
+ 
+ L(end):
+-    clz.w           t0, t0
+-    sltu            t1, a2, t0
+-    sub.d           a0, a0, t0
+-    masknez         a0, a0, t1
++    sll.d           t2, t3, t4
++    and             t0, t0, t2
++    addi.d          a0, a3, 31
++    clz.w           t1, t0
++
+ 
++    sub.d           a0, a0, t1
++    maskeqz         a0, a0, t0
+     jr              ra
+-L(out):
++L(ret0):
+     move            a0, zero
++
+     jr              ra
+-END(MEMRCHR_NAME)
++END(MEMRCHR)
+ 
+ #ifdef _LIBC
+-libc_hidden_builtin_def (MEMRCHR_NAME)
++libc_hidden_builtin_def (MEMRCHR)
+ #endif
+ 
+ #endif
+diff --git a/sysdeps/loongarch/lp64/multiarch/memset-lsx.S b/sysdeps/loongarch/lp64/multiarch/memset-lsx.S
+index f5cbac21ed..a3bbadb7b2 100644
+--- a/sysdeps/loongarch/lp64/multiarch/memset-lsx.S
++++ b/sysdeps/loongarch/lp64/multiarch/memset-lsx.S
+@@ -3,15 +3,15 @@
+ #include <sys/regdef.h>
+ #include <sys/asm.h>
+ #else
++#include <regdef.h>
+ #include <sys/asm.h>
+-#include <sys/regdef.h>
+ #endif
+ 
+ #if IS_IN (libc)
+ 
+-#define MEMSET_NAME __memset_lsx
++#define MEMSET	__memset_lsx
+ 
+-LEAF(MEMSET_NAME)
++LEAF(MEMSET)
+     .align          6
+     li.d            t1, 16
+     move            a3, a0
+@@ -116,10 +116,10 @@ L(end_less_32):
+ L(end_less_16):
+     vst             $vr0, a4, -16
+     jr              ra
+-END(MEMSET_NAME)
++END(MEMSET)
+ 
+ #ifdef _LIBC
+-libc_hidden_builtin_def (MEMSET_NAME)
++libc_hidden_builtin_def (MEMSET)
+ #endif
+ 
+ #endif
+diff --git a/sysdeps/loongarch/lp64/multiarch/rawmemchr-lsx.S b/sysdeps/loongarch/lp64/multiarch/rawmemchr-lsx.S
+index 6d9cd660ad..11a19c1d5b 100644
+--- a/sysdeps/loongarch/lp64/multiarch/rawmemchr-lsx.S
++++ b/sysdeps/loongarch/lp64/multiarch/rawmemchr-lsx.S
+@@ -3,15 +3,15 @@
+ #include <sys/regdef.h>
+ #include <sys/asm.h>
+ #else
++#include <regdef.h>
+ #include <sys/asm.h>
+-#include <sys/regdef.h>
+ #endif
+ 
+ #if IS_IN (libc)
+ 
+-# define RAWMEMCHR_NAME __rawmemchr_lsx
++# define RAWMEMCHR __rawmemchr_lsx
+ 
+-LEAF(RAWMEMCHR_NAME)
++LEAF(RAWMEMCHR)
+     .align          6
+     move            a2, a0
+     bstrins.d       a0, zero, 4, 0
+@@ -47,10 +47,10 @@ L(loop):
+ 
+     add.d           a0, a0, t0
+     jr              ra
+-END(RAWMEMCHR_NAME)
++END(RAWMEMCHR)
+ 
+ #ifdef _LIBC
+-libc_hidden_builtin_def (RAWMEMCHR_NAME)
++libc_hidden_builtin_def (RAWMEMCHR)
+ #endif
+ 
+ #endif
+diff --git a/sysdeps/loongarch/lp64/multiarch/stpcpy-lsx.S b/sysdeps/loongarch/lp64/multiarch/stpcpy-lsx.S
+index 10885f00de..bf0eed43f7 100644
+--- a/sysdeps/loongarch/lp64/multiarch/stpcpy-lsx.S
++++ b/sysdeps/loongarch/lp64/multiarch/stpcpy-lsx.S
+@@ -3,24 +3,20 @@
+ #include <sys/regdef.h>
+ #include <sys/asm.h>
+ #else
++#include <regdef.h>
+ #include <sys/asm.h>
+-#include <sys/regdef.h>
+ #endif
+ 
+ #if IS_IN (libc)
+ 
+-#define STPCPY_NAME __stpcpy_lsx
++#define STPCPY __stpcpy_lsx
+ 
+ L(magic_num):
+     .align          6
+     .dword          0x0706050403020100
+     .dword          0x0f0e0d0c0b0a0908
+-    nop
+-    nop
+-    nop
+-    nop
+-ENTRY_NO_ALIGN(STPCPY_NAME)
+-    pcaddi          t0, -8
++ENTRY_NO_ALIGN(STPCPY)
++    pcaddi          t0, -4
+     andi            a4, a1, 0xf
+     vld             $vr1, t0, 0
+     beqz            a4, L(load_start)
+@@ -30,13 +26,13 @@ ENTRY_NO_ALIGN(STPCPY_NAME)
+     vreplgr2vr.b    $vr2, a4
+     vadd.b          $vr2, $vr2, $vr1
+ 
+-
+     vshuf.b         $vr0, $vr2, $vr0, $vr2
+     vsetanyeqz.b    $fcc0, $vr0
+     bcnez           $fcc0, L(end)
+ L(load_start):
+     vld             $vr0, a1, 0
+ 
++
+     li.d            t1, 16
+     andi            a3, a0, 0xf
+     vsetanyeqz.b    $fcc0, $vr0
+@@ -52,19 +48,19 @@ L(load_start):
+     vsetanyeqz.b    $fcc0, $vr0
+     bcnez           $fcc0, L(end)
+ 
+-
+ L(loop):
+     vst             $vr0, a0, 0
+     vld             $vr0, a1, 16
+     addi.d          a0, a0, 16
+     addi.d          a1, a1, 16
+ 
++
+     vsetanyeqz.b    $fcc0, $vr0
+     bceqz           $fcc0, L(loop)
+-    vseqi.b         $vr1, $vr0, 0
+-    vfrstpi.b       $vr1, $vr1, 0
++    vmsknz.b        $vr1, $vr0
++    movfr2gr.s      t0, $f1
+ 
+-    vpickve2gr.bu   t0, $vr1, 0
++    cto.w           t0, t0
+     add.d           a1, a1, t0
+     vld             $vr0, a1, -15
+     add.d           a0, a0, t0
+@@ -75,13 +71,13 @@ L(end):
+     vseqi.b         $vr1, $vr0, 0
+     vfrstpi.b       $vr1, $vr1, 0
+ 
+-
+     vpickve2gr.bu   t0, $vr1, 0
+     addi.d          t0, t0, 1
+ L(end_16):
+     andi            t1, t0, 16
+     beqz            t1, L(end_8)
+ 
++
+     vst             $vr0, a0, 0
+     addi.d          a0, a0, 15
+     jr              ra
+@@ -99,13 +95,13 @@ L(end_8):
+ L(end_4):
+     beqz            t3, L(end_2)
+ 
+-
+     vstelm.w        $vr0, a0, 0, 0
+     addi.d          a0, a0, 4
+     vbsrl.v         $vr0, $vr0, 4
+ L(end_2):
+     beqz            t4, L(end_1)
+ 
++
+     vstelm.h        $vr0, a0, 0, 0
+     addi.d          a0, a0, 2
+     vbsrl.v         $vr0, $vr0, 2
+@@ -118,62 +114,65 @@ L(out):
+     addi.d          a0, a0, -1
+     jr              ra
+ 
++    nop
++    nop
+ L(unaligned):
+     andi           a3, a1, 0xf
+     bstrins.d      a1, zero, 3, 0
++
+     vld            $vr2, a1, 0
+     vreplgr2vr.b   $vr3, a3
+-
+-
+     vslt.b         $vr4, $vr1, $vr3
+     vor.v          $vr0, $vr2, $vr4
++
++
+     vsetanyeqz.b   $fcc0, $vr0
+     bcnez          $fcc0, L(un_first_end)
+-
+     vld            $vr0, a1, 16
+     vadd.b         $vr3, $vr3, $vr1
++
+     addi.d         a1, a1, 16
+     vshuf.b        $vr4, $vr0, $vr2, $vr3
+-
+     vsetanyeqz.b   $fcc0, $vr0
+     bcnez          $fcc0, L(un_end)
++
+ L(un_loop):
+     vor.v          $vr2, $vr0, $vr0
+     vld            $vr0, a1, 16
+-
+     vst            $vr4, a0, 0
+     addi.d         a1, a1, 16
++
+     addi.d         a0, a0, 16
+     vshuf.b        $vr4, $vr0, $vr2, $vr3
+-
+-
+     vsetanyeqz.b   $fcc0, $vr0
+     bceqz          $fcc0, L(un_loop)
++
++
+ L(un_end):
+     vsetanyeqz.b    $fcc0, $vr4
+     bcnez           $fcc0, 1f
+-
+     vst             $vr4, a0, 0
+ 1:
+-    vseqi.b         $vr1, $vr0, 0
+-    vfrstpi.b       $vr1, $vr1, 0
+-    vpickve2gr.bu   t0, $vr1, 0
++    vmsknz.b        $vr1, $vr0
+ 
++    movfr2gr.s      t0, $f1
++    cto.w           t0, t0
+     add.d           a1, a1, t0
+     vld             $vr0, a1, -15
++
+     add.d           a0, a0, t0
+     sub.d           a0, a0, a3
+-
+     vst             $vr0, a0, 1
+     addi.d          a0, a0, 16
++
+     jr              ra
+ L(un_first_end):
+     addi.d          a0, a0, -16
+     b               1b
+-END(STPCPY_NAME)
++END(STPCPY)
+ 
+ #ifdef _LIBC
+-libc_hidden_builtin_def (STPCPY_NAME)
++libc_hidden_builtin_def (STPCPY)
+ #endif
+ 
+ #endif
+diff --git a/sysdeps/loongarch/lp64/multiarch/strchr-lsx.S b/sysdeps/loongarch/lp64/multiarch/strchr-lsx.S
+index ebc8ff2b4a..64ead00bae 100644
+--- a/sysdeps/loongarch/lp64/multiarch/strchr-lsx.S
++++ b/sysdeps/loongarch/lp64/multiarch/strchr-lsx.S
+@@ -3,17 +3,17 @@
+ #include <sys/regdef.h>
+ #include <sys/asm.h>
+ #else
++#include <regdef.h>
+ #include <sys/asm.h>
+-#include <sys/regdef.h>
+ #endif
+ 
+ #if IS_IN (libc)
+ 
+ #ifndef AS_STRCHRNUL
+-#define STRCHR_NAME __strchr_lsx
++#define STRCHR	__strchr_lsx
+ #endif
+ 
+-LEAF(STRCHR_NAME)
++LEAF(STRCHR)
+     .align          6
+     andi            t1, a0, 0xf
+     bstrins.d       a0, zero, 3, 0
+@@ -54,8 +54,8 @@ L(loop):
+     movfr2gr.s      t0, $f0
+ 
+     b               L(found)
+-END(STRCHR_NAME)
++END(STRCHR)
+ 
+-libc_hidden_builtin_def (STRCHR_NAME)
++libc_hidden_builtin_def (STRCHR)
+ 
+ #endif
+diff --git a/sysdeps/loongarch/lp64/multiarch/strchrnul-lsx.S b/sysdeps/loongarch/lp64/multiarch/strchrnul-lsx.S
+index c57c192b6b..d363f11f6d 100644
+--- a/sysdeps/loongarch/lp64/multiarch/strchrnul-lsx.S
++++ b/sysdeps/loongarch/lp64/multiarch/strchrnul-lsx.S
+@@ -1,3 +1,3 @@
+-#define STRCHR_NAME __strchrnul_lsx
++#define STRCHR __strchrnul_lsx
+ #define AS_STRCHRNUL
+ #include "strchr-lsx.S"
+diff --git a/sysdeps/loongarch/lp64/multiarch/strcmp-lsx.S b/sysdeps/loongarch/lp64/multiarch/strcmp-lsx.S
+index cf8c3351c5..226b1d634e 100644
+--- a/sysdeps/loongarch/lp64/multiarch/strcmp-lsx.S
++++ b/sysdeps/loongarch/lp64/multiarch/strcmp-lsx.S
+@@ -3,13 +3,13 @@
+ #include <sys/regdef.h>
+ #include <sys/asm.h>
+ #else
++#include <regdef.h>
+ #include <sys/asm.h>
+-#include <sys/regdef.h>
+ #endif
+ 
+ #if IS_IN (libc)
+ 
+-#define STRCMP_NAME __strcmp_lsx
++#define STRCMP	__strcmp_lsx
+ 
+ /* int strcmp (const char *s1, const char *s2); */
+ L(magic_num):
+@@ -17,12 +17,8 @@ L(magic_num):
+     .dword          0x0706050403020100
+     .dword          0x0f0e0d0c0b0a0908
+ 
+-    nop
+-    nop
+-    nop
+-    nop
+-ENTRY_NO_ALIGN(STRCMP_NAME)
+-    pcaddi          t0, -8
++ENTRY_NO_ALIGN(STRCMP)
++    pcaddi          t0, -4
+     andi            a2, a0, 0xf
+     vld             $vr2, t0, 0
+     andi            a3, a1, 0xf
+@@ -32,12 +28,12 @@ ENTRY_NO_ALIGN(STRCMP_NAME)
+     bstrins.d       a1, zero, 3, 0
+     vld             $vr0, a0, 0
+ 
+-
+     vld             $vr1, a1, 0
+     vreplgr2vr.b    $vr3, a2
+     vslt.b          $vr2, $vr2, $vr3
+     vseq.b          $vr3, $vr0, $vr1
+ 
++
+     vmin.bu         $vr3, $vr0, $vr3
+     vor.v           $vr3, $vr3, $vr2
+     vsetanyeqz.b    $fcc0, $vr3
+@@ -54,95 +50,98 @@ L(al_loop):
+     vsetanyeqz.b    $fcc0, $vr3
+     bceqz           $fcc0, L(al_loop)
+ 
+-
+ L(al_out):
+     vseqi.b         $vr3, $vr3, 0
+     vfrstpi.b       $vr3, $vr3, 0
+     vshuf.b         $vr0, $vr0, $vr0, $vr3
+     vshuf.b         $vr1, $vr1, $vr1, $vr3
+ 
++
+     vpickve2gr.bu   t0, $vr0, 0
+     vpickve2gr.bu   t1, $vr1, 0
+     sub.d           a0, t0, t1
+     jr              ra
+ 
++    nop
++    nop
++    nop
+ L(unaligned):
+     slt             a4, a2, a3
++
+     xor             t0, a0, a1
+     maskeqz         t0, t0, a4
+     xor             a0, a0, t0   # a0 hold the larger one
+-
+     xor             a1, a1, t0   # a1 hold the small one
++
+     andi            a2, a0, 0xf
+     andi            a3, a1, 0xf
+     bstrins.d       a0, zero, 3, 0
++    bstrins.d       a1, zero, 3, 0
+ 
+ 
+-    bstrins.d       a1, zero, 3, 0
+     vld             $vr0, a0, 0
+     vld             $vr3, a1, 0
+     vreplgr2vr.b    $vr4, a2
+-
+     vreplgr2vr.b    $vr5, a3
++
+     vslt.b          $vr7, $vr2, $vr4
+     vsub.b          $vr4, $vr4, $vr5
+     vaddi.bu        $vr6, $vr2, 16
+-
+     vsub.b          $vr6, $vr6, $vr4
++
+     vshuf.b         $vr1, $vr3, $vr3, $vr6
+     vseq.b          $vr4, $vr0, $vr1
+     vmin.bu         $vr4, $vr0, $vr4
+-
+     vor.v           $vr4, $vr4, $vr7
++
+     vsetanyeqz.b    $fcc0, $vr4
+     bcnez           $fcc0, L(un_end)
+     vslt.b          $vr5, $vr2, $vr5
++    vor.v           $vr3, $vr3, $vr5
+ 
+ 
+-    vor.v           $vr3, $vr3, $vr5
+ L(un_loop):
+     vld             $vr0, a0, 16
+     vsetanyeqz.b    $fcc0, $vr3
+     bcnez           $fcc0, L(remaining_end)
+-
+     vor.v           $vr1, $vr3, $vr3
++
+     vld             $vr3, a1, 16
+     addi.d          a0, a0, 16
+     addi.d          a1, a1, 16
+-
+     vshuf.b         $vr1, $vr3, $vr1, $vr6
++
+     vseq.b          $vr4, $vr0, $vr1
+     vmin.bu         $vr4, $vr0, $vr4
+     vsetanyeqz.b    $fcc0, $vr4
+-
+     bceqz           $fcc0, L(un_loop)
++
+ L(un_end):
+     vseqi.b         $vr4, $vr4, 0
+     vfrstpi.b       $vr4, $vr4, 0
+     vshuf.b         $vr0, $vr0, $vr0, $vr4
++    vshuf.b         $vr1, $vr1, $vr1, $vr4
+ 
+ 
+-    vshuf.b         $vr1, $vr1, $vr1, $vr4
+     vpickve2gr.bu   t0, $vr0, 0
+     vpickve2gr.bu   t1, $vr1, 0
+     sub.d           t3, t0, t1
+-
+     sub.d           t4, t1, t0
++
+     masknez         t0, t3, a4
+     maskeqz         t1, t4, a4
+     or              a0, t0, t1
+-
+     jr              ra
++
+ L(remaining_end):
+     vshuf.b         $vr1, $vr3, $vr3, $vr6
+     vseq.b          $vr4, $vr0, $vr1
+     vmin.bu         $vr4, $vr4, $vr0
+-
+     b               L(un_end)
+-END(STRCMP_NAME)
++END(STRCMP)
+ 
+ #ifdef _LIBC
+-libc_hidden_builtin_def (STRCMP_NAME)
++libc_hidden_builtin_def (STRCMP)
+ #endif
+ 
+ #endif
+diff --git a/sysdeps/loongarch/lp64/multiarch/strcpy-lsx.S b/sysdeps/loongarch/lp64/multiarch/strcpy-lsx.S
+index bbc5c78d57..76db561ad7 100644
+--- a/sysdeps/loongarch/lp64/multiarch/strcpy-lsx.S
++++ b/sysdeps/loongarch/lp64/multiarch/strcpy-lsx.S
+@@ -3,8 +3,8 @@
+ #include <sys/regdef.h>
+ #include <sys/asm.h>
+ #else
++#include <regdef.h>
+ #include <sys/asm.h>
+-#include <sys/regdef.h>
+ #endif
+ 
+ #if IS_IN (libc)
+@@ -17,154 +17,151 @@ L(magic_num):
+     .align          6
+     .dword          0x0706050403020100
+     .dword          0x0f0e0d0c0b0a0908
+-    nop
+-    nop
+-    nop
+ ENTRY_NO_ALIGN(STRCPY)
+-    pcaddi          t0, -7
+-
++    pcaddi          t0, -4
+     andi            a4, a1, 0xf
+     vld             $vr1, t0, 0
+     move            a2, a0
+-    beqz            a4, L(load_start)
+ 
++    beqz            a4, L(load_start)
+     xor             t0, a1, a4
+     vld             $vr0, t0, 0
+     vreplgr2vr.b    $vr2, a4
+-    vadd.b          $vr2, $vr2, $vr1
+-
+ 
++    vadd.b          $vr2, $vr2, $vr1
+     vshuf.b         $vr0, $vr2, $vr0, $vr2
+     vsetanyeqz.b    $fcc0, $vr0
+     bcnez           $fcc0, L(end)
++
++
+ L(load_start):
+     vld             $vr0, a1, 0
+-
+     li.d            t1, 16
+-    andi            a3, a0, 0xf
++    andi            a3, a2, 0xf
+     vsetanyeqz.b    $fcc0, $vr0
+-    sub.d           t0, t1, a3
+ 
++    sub.d           t0, t1, a3
+     bcnez           $fcc0, L(end)
+     add.d           a1, a1, t0
+     vst             $vr0, a2, 0
+-    add.d           a2, a2, t0
+ 
+-    bne             a3, a4, L(unaligned)
++    andi            a3, a1, 0xf
++    add.d           a2, a2, t0
++    bnez            a3, L(unaligned)
+     vld             $vr0, a1, 0
++
+     vsetanyeqz.b    $fcc0, $vr0
+     bcnez           $fcc0, L(end)
+-
+-
+ L(loop):
+     vst             $vr0, a2, 0
+     vld             $vr0, a1, 16
++
++
+     addi.d          a2, a2, 16
+     addi.d          a1, a1, 16
+-
+     vsetanyeqz.b    $fcc0, $vr0
+     bceqz           $fcc0, L(loop)
+-    vseqi.b         $vr1, $vr0, 0
+-    vfrstpi.b       $vr1, $vr1, 0
+ 
+-    vpickve2gr.bu   t0, $vr1, 0
++    vmsknz.b        $vr1, $vr0
++    movfr2gr.s      t0, $f1
++    cto.w           t0, t0
+     add.d           a1, a1, t0
++
+     vld             $vr0, a1, -15
+     add.d           a2, a2, t0
+-
+     vst             $vr0, a2, -15
+     jr              ra
++
+ L(end):
+-    vseqi.b         $vr1, $vr0, 0
+-    vfrstpi.b       $vr1, $vr1, 0
++    vmsknz.b        $vr1, $vr0
++    movfr2gr.s      t0, $f1
++    cto.w           t0, t0
++    addi.d          t0, t0, 1
+ 
+ 
+-    vpickve2gr.bu   t0, $vr1, 0
+-    addi.d          t0, t0, 1
+ L(end_16):
+     andi            t1, t0, 16
+     beqz            t1, L(end_8)
+-
+     vst             $vr0, a2, 0
+     jr              ra
++
+ L(end_8):
+     andi            t2, t0, 8
+     andi            t3, t0, 4
+-
+     andi            t4, t0, 2
+     andi            t5, t0, 1
++
+     beqz            t2, L(end_4)
+     vstelm.d        $vr0, a2, 0, 0
+-
+     addi.d          a2, a2, 8
+     vbsrl.v         $vr0, $vr0, 8
++
+ L(end_4):
+     beqz            t3, L(end_2)
+     vstelm.w        $vr0, a2, 0, 0
+-
+-
+     addi.d          a2, a2, 4
+     vbsrl.v         $vr0, $vr0, 4
++
++
+ L(end_2):
+     beqz            t4, L(end_1)
+     vstelm.h        $vr0, a2, 0, 0
+-
+     addi.d          a2, a2, 2
+     vbsrl.v         $vr0, $vr0, 2
++
+ L(end_1):
+     beqz            t5, L(out)
+     vstelm.b        $vr0, a2, 0, 0
+-
+ L(out):
+     jr              ra
+ L(unaligned):
+-    andi           a3, a1, 0xf
+     bstrins.d      a1, zero, 3, 0
+-    vld            $vr2, a1, 0
+ 
++    vld            $vr2, a1, 0
+     vreplgr2vr.b   $vr3, a3
+     vslt.b         $vr4, $vr1, $vr3
+     vor.v          $vr0, $vr2, $vr4
+-    vsetanyeqz.b   $fcc0, $vr0
+-
+ 
++    vsetanyeqz.b   $fcc0, $vr0
+     bcnez          $fcc0, L(un_first_end)
+     vld            $vr0, a1, 16
+     vadd.b         $vr3, $vr3, $vr1
+-    addi.d         a1, a1, 16
+ 
++
++    addi.d         a1, a1, 16
+     vshuf.b        $vr4, $vr0, $vr2, $vr3
+     vsetanyeqz.b   $fcc0, $vr0
+     bcnez          $fcc0, L(un_end)
++
+ L(un_loop):
+     vor.v          $vr2, $vr0, $vr0
+-
+     vld            $vr0, a1, 16
+     vst            $vr4, a2, 0
+     addi.d         a1, a1, 16
+-    addi.d         a2, a2, 16
+ 
++    addi.d         a2, a2, 16
+     vshuf.b        $vr4, $vr0, $vr2, $vr3
+     vsetanyeqz.b   $fcc0, $vr0
+     bceqz          $fcc0, L(un_loop)
++
+ L(un_end):
+     vsetanyeqz.b    $fcc0, $vr4
+-
+-
+     bcnez           $fcc0, 1f
+     vst             $vr4, a2, 0
+ 1:
+-    vseqi.b         $vr1, $vr0, 0
+-    vfrstpi.b       $vr1, $vr1, 0
++    vmsknz.b        $vr1, $vr0
++
+ 
+-    vpickve2gr.bu   t0, $vr1, 0
++    movfr2gr.s      t0, $f1
++    cto.w           t0, t0
+     add.d           a1, a1, t0
+     vld             $vr0, a1, -15
+-    add.d           a2, a2, t0
+ 
++    add.d           a2, a2, t0
+     sub.d           a2, a2, a3
+     vst             $vr0, a2, 1
+     jr              ra
++
+ L(un_first_end):
+     addi.d          a2, a2, -16
+     b               1b
+diff --git a/sysdeps/loongarch/lp64/multiarch/strlen-lsx.S b/sysdeps/loongarch/lp64/multiarch/strlen-lsx.S
+index 0c1f522931..6edcac8c70 100644
+--- a/sysdeps/loongarch/lp64/multiarch/strlen-lsx.S
++++ b/sysdeps/loongarch/lp64/multiarch/strlen-lsx.S
+@@ -3,8 +3,8 @@
+ #include <sys/regdef.h>
+ #include <sys/asm.h>
+ #else
++#include <regdef.h>
+ #include <sys/asm.h>
+-#include <sys/regdef.h>
+ #endif
+ 
+ #if IS_IN (libc)
+@@ -21,29 +21,37 @@ LEAF(STRLEN)
+     vld             $vr1, a0, 16
+ 
+     li.d            t1, -1
+-    addi.d          a0, a0, 16
+     vmsknz.b        $vr0, $vr0
+     vmsknz.b        $vr1, $vr1
+-
+     vilvl.h         $vr0, $vr1, $vr0
++
+     movfr2gr.s      t0, $f0
+     sra.w           t0, t0, a1
+     beq             t0, t1, L(loop)
+-
+     cto.w           a0, t0
++
+     jr              ra
+-L(loop):
+-    vld             $vr0, a0, 16
+-    addi.d          a0, a0, 16
++    nop
++    nop
++    nop
+ 
+ 
+-    vsetanyeqz.b    $fcc0, $vr0
++L(loop):
++    vld             $vr0, a0, 32
++    vld             $vr1, a0, 48
++    addi.d          a0, a0, 32
++    vmin.bu         $vr2, $vr0, $vr1
++
++    vsetanyeqz.b    $fcc0, $vr2
+     bceqz           $fcc0, L(loop)
+     vmsknz.b        $vr0, $vr0
+-    sub.d           a0, a0, a1
++    vmsknz.b        $vr1, $vr1
+ 
++    vilvl.h         $vr0, $vr1, $vr0
++    sub.d           a0, a0, a1
+     movfr2gr.s      t0, $f0
+     cto.w           t0, t0
++
+     add.d           a0, a0, t0
+     jr              ra
+ END(STRLEN)
+diff --git a/sysdeps/loongarch/lp64/multiarch/strncmp-lsx.S b/sysdeps/loongarch/lp64/multiarch/strncmp-lsx.S
+index c796479fea..3399bf7775 100644
+--- a/sysdeps/loongarch/lp64/multiarch/strncmp-lsx.S
++++ b/sysdeps/loongarch/lp64/multiarch/strncmp-lsx.S
+@@ -3,8 +3,8 @@
+ #include <sys/regdef.h>
+ #include <sys/asm.h>
+ #else
++#include <regdef.h>
+ #include <sys/asm.h>
+-#include <sys/regdef.h>
+ #endif
+ 
+ #if IS_IN (libc)
+diff --git a/sysdeps/loongarch/lp64/multiarch/strnlen-lsx.S b/sysdeps/loongarch/lp64/multiarch/strnlen-lsx.S
+index dee5b74f90..388c239a02 100644
+--- a/sysdeps/loongarch/lp64/multiarch/strnlen-lsx.S
++++ b/sysdeps/loongarch/lp64/multiarch/strnlen-lsx.S
+@@ -3,8 +3,8 @@
+ #include <sys/regdef.h>
+ #include <sys/asm.h>
+ #else
++#include <regdef.h>
+ #include <sys/asm.h>
+-#include <sys/regdef.h>
+ #endif
+ 
+ #if IS_IN (libc)
+@@ -17,57 +17,60 @@ LEAF(STRNLEN)
+     .align          6
+     beqz            a1, L(ret0)
+     andi            t1, a0, 0x1f
+-    li.d            t3, 32
+-    sub.d           t2, a0, t1
++    li.d            t3, 33
++    sub.d           a2, a0, t1
+ 
+-    vld             $vr0, t2, 0
+-    vld             $vr1, t2, 16
+-    sub.d           t3, t3, t1
+-    move            a2, a0
++    vld             $vr0, a2, 0
++    vld             $vr1, a2, 16
++    sub.d           t1, t3, t1
++    move            a3, a0
+ 
+-    sltu            t1, t3, a1
++    sltu            t1, a1, t1
+     vmsknz.b        $vr0, $vr0
+     vmsknz.b        $vr1, $vr1
+-    sltui           t1, t1, 1
+-
+     vilvl.h         $vr0, $vr1, $vr0
++
+     movfr2gr.s      t0, $f0
+-    sra.w           t0, t0, a2
++    sra.w           t0, t0, a0
+     orn             t1, t1, t0
++    bnez            t1, L(end)
+ 
+ 
+-    bnez            t1, L(end)
+-    move            a0, t2
+-    sub.d           t2, a1, t3
++    add.d           a4, a0, a1
++    move            a0, a2
++    addi.d          a4, a4, -1
++    bstrins.d       a4, zero, 4, 0
++
+ L(loop):
+     vld             $vr0, a0, 32
+-
+     vld             $vr1, a0, 48
+-    sltui           t1, t2, 33
+     addi.d          a0, a0, 32
+-    addi.d          t2, t2, -32
++    beq             a0, a4, L(out)
+ 
++    vmin.bu         $vr2, $vr0, $vr1
++    vsetanyeqz.b    $fcc0, $vr2
++    bceqz           $fcc0, L(loop)
++L(out):
+     vmsknz.b        $vr0, $vr0
++
+     vmsknz.b        $vr1, $vr1
+     vilvl.h         $vr0, $vr1, $vr0
+     movfr2gr.s      t0, $f0
+-
+-    orn             t1, t1, t0
+-    beqz            t1, L(loop)
+ L(end):
+-    sub.d           a0, a0, a2
+-    cto.d           t0, t0
++    sub.d           a0, a0, a3
+ 
+ 
++    cto.w           t0, t0
+     add.d           a0, a0, t0
+     sltu            t1, a0, a1
+     masknez         t0, a1, t1
+-    maskeqz         t1, a0, t1
+ 
++    maskeqz         t1, a0, t1
+     or              a0, t0, t1
+     jr              ra
+ L(ret0):
+     move            a0, zero
++
+     jr              ra
+ END(STRNLEN)
+ 
+diff --git a/sysdeps/loongarch/lp64/multiarch/strrchr-lsx.S b/sysdeps/loongarch/lp64/multiarch/strrchr-lsx.S
+index 68012d6300..e9228a2e63 100644
+--- a/sysdeps/loongarch/lp64/multiarch/strrchr-lsx.S
++++ b/sysdeps/loongarch/lp64/multiarch/strrchr-lsx.S
+@@ -3,17 +3,17 @@
+ #include <sys/regdef.h>
+ #include <sys/asm.h>
+ #else
++#include <regdef.h>
+ #include <sys/asm.h>
+-#include <sys/regdef.h>
+ #endif
+ 
+ #if IS_IN (libc)
+ 
+-#define STRRCHR_NAME __strrchr_lsx
++#define STRRCHR __strrchr_lsx
+ 
+-LEAF(STRRCHR_NAME)
++LEAF(STRRCHR)
+     .align          6
+-    andi            t0, a0, 0x1f
++    andi            t1, a0, 0x1f
+     bstrins.d       a0, zero, 4, 0
+     vld             $vr0, a0, 0
+     vld             $vr1, a0, 16
+@@ -23,8 +23,8 @@ LEAF(STRRCHR_NAME)
+     move            a2, zero
+     addi.d          a0, a0, 31
+ 
+-    vxor.v          $vr2, $vr0, $vr4
+-    vxor.v          $vr3, $vr1, $vr4
++    vseq.b          $vr2, $vr0, $vr4
++    vseq.b          $vr3, $vr1, $vr4
+     vmsknz.b        $vr0, $vr0
+     vmsknz.b        $vr1, $vr1
+ 
+@@ -34,47 +34,49 @@ LEAF(STRRCHR_NAME)
+     vilvl.h         $vr1, $vr3, $vr2
+ 
+ 
+-    sll.d           t3, t2, t0
+     movfr2gr.s      t0, $f0
++    sll.d           t3, t2, t1
+     movfr2gr.s      t1, $f1
+     orn             t0, t0, t3
+ 
+-    orn             t1, t1, t3
++    and             t1, t1, t3
+     bne             t0, t2, L(end)
+ L(loop):
+     vld             $vr0, a0, 1
+     vld             $vr1, a0, 17
+ 
+-    clo.w           t0, t1
+-    orn             t1, zero, t1
++    clz.w           t0, t1
+     sub.d           t0, a0, t0
+     addi.d          a0, a0, 32
+-
+     maskeqz         t0, t0, t1
++
+     masknez         t1, a2, t1
+     or              a2, t0, t1
+-    vxor.v          $vr2, $vr0, $vr4
++    vseq.b          $vr2, $vr0, $vr4
++    vseq.b          $vr3, $vr1, $vr4
+ 
+-    vxor.v          $vr3, $vr1, $vr4
+-    vmsknz.b        $vr0, $vr0
+-    vmsknz.b        $vr1, $vr1
+-    vmsknz.b        $vr2, $vr2
+ 
++    vmsknz.b        $vr2, $vr2
+     vmsknz.b        $vr3, $vr3
++    vmin.bu         $vr5, $vr0, $vr1
++    vilvl.h         $vr2, $vr3, $vr2
++
++    vsetanyeqz.b    $fcc0, $vr5
++    movfr2gr.s      t1, $f2
++    bceqz           $fcc0, L(loop)
++    vmsknz.b        $vr0, $vr0
++
++    vmsknz.b        $vr1, $vr1
+     vilvl.h         $vr0, $vr1, $vr0
+-    vilvl.h         $vr1, $vr3, $vr2
+     movfr2gr.s      t0, $f0
+-
+-    movfr2gr.s      t1, $f1
+-    beq             t0, t2, L(loop)
+ L(end):
+     slli.d          t3, t2, 1   # shift one more for the last '\0'
+-    cto.w           t0, t0
+ 
++    cto.w           t0, t0
+     sll.d           t3, t3, t0
+-    or              t1, t1, t3
+-    clo.w           t0, t1
+-    orn             t1, zero, t1
++    andn            t1, t1, t3
++    clz.w           t0, t1
++
+ 
+     sub.d           a0, a0, t0
+     maskeqz         t0, a0, t1
+@@ -82,12 +84,10 @@ L(end):
+     or              a0, t0, t1
+ 
+     jr              ra
+-END(STRRCHR_NAME)
++END(STRRCHR)
+ 
+ #ifdef _LIBC
+-#undef rindex
+-weak_alias(strrchr,rindex)
+-libc_hidden_builtin_def(STRRCHR_NAME)
++libc_hidden_builtin_def(STRRCHR)
+ #endif
+ 
+ #endif
+-- 
+2.20.1
+

@@ -1,0 +1,246 @@
+From 08bb6180a4d759c46212810694012716ed82d905 Mon Sep 17 00:00:00 2001
+From: Xiaolin Tang <tangxiaolin@loongson.cn>
+Date: Wed, 14 Dec 2022 14:41:04 +0800
+Subject: [PATCH 05/44] LoongArch: Hard Float Support for functions
+ {ll/l/}rint{f/ }.
+
+Use hardware Floating-point instruction frint.{s/d} to implement
+functions {ll/l/ }rint{f/ }.
+
+Change-Id: I1e34bcf86ccb38611755889eec094b9d27c52ba5
+---
+ sysdeps/loongarch/fpu/s_llrint.c  | 31 +++++++++++++++++++++++++++++++
+ sysdeps/loongarch/fpu/s_llrintf.c | 31 +++++++++++++++++++++++++++++++
+ sysdeps/loongarch/fpu/s_lrint.c   | 31 +++++++++++++++++++++++++++++++
+ sysdeps/loongarch/fpu/s_lrintf.c  | 31 +++++++++++++++++++++++++++++++
+ sysdeps/loongarch/fpu/s_rint.c    | 29 +++++++++++++++++++++++++++++
+ sysdeps/loongarch/fpu/s_rintf.c   | 29 +++++++++++++++++++++++++++++
+ 6 files changed, 182 insertions(+)
+ create mode 100644 sysdeps/loongarch/fpu/s_llrint.c
+ create mode 100644 sysdeps/loongarch/fpu/s_llrintf.c
+ create mode 100644 sysdeps/loongarch/fpu/s_lrint.c
+ create mode 100644 sysdeps/loongarch/fpu/s_lrintf.c
+ create mode 100644 sysdeps/loongarch/fpu/s_rint.c
+ create mode 100644 sysdeps/loongarch/fpu/s_rintf.c
+
+diff --git a/sysdeps/loongarch/fpu/s_llrint.c b/sysdeps/loongarch/fpu/s_llrint.c
+new file mode 100644
+index 0000000000..4a8e46ecef
+--- /dev/null
++++ b/sysdeps/loongarch/fpu/s_llrint.c
+@@ -0,0 +1,31 @@
++/* llrint().  LoongArch version.
++   Copyright (C) 2022 Free Software Foundation, Inc.
++   This file is part of the GNU C Library.
++
++   The GNU C Library is free software; you can redistribute it and/or
++   modify it under the terms of the GNU Lesser General Public
++   License as published by the Free Software Foundation; either
++   version 2.1 of the License, or (at your option) any later version.
++
++   The GNU C Library is distributed in the hope that it will be useful,
++   but WITHOUT ANY WARRANTY; without even the implied warranty of
++   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++   Lesser General Public License for more details.
++
++   You should have received a copy of the GNU Lesser General Public
++   License along with the GNU C Library; if not, see
++   <https://www.gnu.org/licenses/>.  */
++
++#define NO_MATH_REDIRECT
++#include <math.h>
++#include <libm-alias-double.h>
++
++long long int
++__llrint (double x)
++{
++  long long int result;
++  asm volatile ("ftint.l.d \t%0, %1" : "=f" (x) : "f" (x));
++  asm volatile ("movfr2gr.d \t%0, %1" : "=r" (result) : "f" (x));
++  return result;
++}
++libm_alias_double (__llrint, llrint)
+diff --git a/sysdeps/loongarch/fpu/s_llrintf.c b/sysdeps/loongarch/fpu/s_llrintf.c
+new file mode 100644
+index 0000000000..f3a874a00e
+--- /dev/null
++++ b/sysdeps/loongarch/fpu/s_llrintf.c
+@@ -0,0 +1,31 @@
++/* llrintf().  LoongArch version.
++   Copyright (C) 2022 Free Software Foundation, Inc.
++   This file is part of the GNU C Library.
++
++   The GNU C Library is free software; you can redistribute it and/or
++   modify it under the terms of the GNU Lesser General Public
++   License as published by the Free Software Foundation; either
++   version 2.1 of the License, or (at your option) any later version.
++
++   The GNU C Library is distributed in the hope that it will be useful,
++   but WITHOUT ANY WARRANTY; without even the implied warranty of
++   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++   Lesser General Public License for more details.
++
++   You should have received a copy of the GNU Lesser General Public
++   License along with the GNU C Library; if not, see
++   <https://www.gnu.org/licenses/>.  */
++
++#define NO_MATH_REDIRECT
++#include <math.h>
++#include <libm-alias-float.h>
++
++long long int
++__llrintf (float x)
++{
++  long long int result;
++  asm volatile ("ftint.l.s \t%0, %1" : "=f" (x) : "f" (x));
++  asm volatile ("movfr2gr.d \t%0, %1" : "=r" (result) : "f" (x));
++  return result;
++}
++libm_alias_float (__llrint, llrint)
+diff --git a/sysdeps/loongarch/fpu/s_lrint.c b/sysdeps/loongarch/fpu/s_lrint.c
+new file mode 100644
+index 0000000000..db44611129
+--- /dev/null
++++ b/sysdeps/loongarch/fpu/s_lrint.c
+@@ -0,0 +1,31 @@
++/* lrint().  LoongArch version.
++   Copyright (C) 2022 Free Software Foundation, Inc.
++   This file is part of the GNU C Library.
++
++   The GNU C Library is free software; you can redistribute it and/or
++   modify it under the terms of the GNU Lesser General Public
++   License as published by the Free Software Foundation; either
++   version 2.1 of the License, or (at your option) any later version.
++
++   The GNU C Library is distributed in the hope that it will be useful,
++   but WITHOUT ANY WARRANTY; without even the implied warranty of
++   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++   Lesser General Public License for more details.
++
++   You should have received a copy of the GNU Lesser General Public
++   License along with the GNU C Library; if not, see
++   <https://www.gnu.org/licenses/>.  */
++
++#define NO_MATH_REDIRECT
++#include <math.h>
++#include <libm-alias-double.h>
++
++long int
++__lrint (double x)
++{
++  long int result;
++  asm volatile ("ftint.l.d \t%0, %1" : "=f" (x) : "f" (x));
++  asm volatile ("movfr2gr.d \t%0, %1" : "=r" (result) : "f" (x));
++  return result;
++}
++libm_alias_double (__lrint, lrint)
+diff --git a/sysdeps/loongarch/fpu/s_lrintf.c b/sysdeps/loongarch/fpu/s_lrintf.c
+new file mode 100644
+index 0000000000..cde60b88c5
+--- /dev/null
++++ b/sysdeps/loongarch/fpu/s_lrintf.c
+@@ -0,0 +1,31 @@
++/* lrintf().  LoongArch version.
++   Copyright (C) 2022 Free Software Foundation, Inc.
++   This file is part of the GNU C Library.
++
++   The GNU C Library is free software; you can redistribute it and/or
++   modify it under the terms of the GNU Lesser General Public
++   License as published by the Free Software Foundation; either
++   version 2.1 of the License, or (at your option) any later version.
++
++   The GNU C Library is distributed in the hope that it will be useful,
++   but WITHOUT ANY WARRANTY; without even the implied warranty of
++   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++   Lesser General Public License for more details.
++
++   You should have received a copy of the GNU Lesser General Public
++   License along with the GNU C Library; if not, see
++   <https://www.gnu.org/licenses/>.  */
++
++#define NO_MATH_REDIRECT
++#include <math.h>
++#include <libm-alias-float.h>
++
++long int
++__lrintf (float x)
++{
++  long int result;
++  asm volatile ("ftint.l.s \t%0, %1" : "=f" (x) : "f" (x));
++  asm volatile ("movfr2gr.d \t%0, %1" : "=r" (result) : "f" (x));
++  return result;
++}
++libm_alias_float (__lrint, lrint)
+diff --git a/sysdeps/loongarch/fpu/s_rint.c b/sysdeps/loongarch/fpu/s_rint.c
+new file mode 100644
+index 0000000000..429d5d1176
+--- /dev/null
++++ b/sysdeps/loongarch/fpu/s_rint.c
+@@ -0,0 +1,29 @@
++/* rint().  LoongArch version.
++   Copyright (C) 2022 Free Software Foundation, Inc.
++   This file is part of the GNU C Library.
++
++   The GNU C Library is free software; you can redistribute it and/or
++   modify it under the terms of the GNU Lesser General Public
++   License as published by the Free Software Foundation; either
++   version 2.1 of the License, or (at your option) any later version.
++
++   The GNU C Library is distributed in the hope that it will be useful,
++   but WITHOUT ANY WARRANTY; without even the implied warranty of
++   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++   Lesser General Public License for more details.
++
++   You should have received a copy of the GNU Lesser General Public
++   License along with the GNU C Library; if not, see
++   <https://www.gnu.org/licenses/>.  */
++
++#define NO_MATH_REDIRECT
++#include <math.h>
++#include <libm-alias-double.h>
++
++double
++__rint (double x)
++{
++  asm volatile ("frint.d \t%0, %1" : "=f" (x) : "f" (x));
++  return x;
++}
++libm_alias_double (__rint, rint)
+diff --git a/sysdeps/loongarch/fpu/s_rintf.c b/sysdeps/loongarch/fpu/s_rintf.c
+new file mode 100644
+index 0000000000..b3faba2027
+--- /dev/null
++++ b/sysdeps/loongarch/fpu/s_rintf.c
+@@ -0,0 +1,29 @@
++/* rintf().  LoongArch version.
++   Copyright (C) 2022 Free Software Foundation, Inc.
++   This file is part of the GNU C Library.
++
++   The GNU C Library is free software; you can redistribute it and/or
++   modify it under the terms of the GNU Lesser General Public
++   License as published by the Free Software Foundation; either
++   version 2.1 of the License, or (at your option) any later version.
++
++   The GNU C Library is distributed in the hope that it will be useful,
++   but WITHOUT ANY WARRANTY; without even the implied warranty of
++   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++   Lesser General Public License for more details.
++
++   You should have received a copy of the GNU Lesser General Public
++   License along with the GNU C Library; if not, see
++   <https://www.gnu.org/licenses/>.  */
++
++#define NO_MATH_REDIRECT
++#include <math.h>
++#include <libm-alias-float.h>
++
++float
++__rintf (float x)
++{
++  asm volatile ("frint.s \t%0, %1" : "=f" (x) : "f" (x));
++  return x;
++}
++libm_alias_float (__rint, rint)
+-- 
+2.20.1
+

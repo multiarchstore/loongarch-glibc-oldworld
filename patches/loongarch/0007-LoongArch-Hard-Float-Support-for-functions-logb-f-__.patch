@@ -1,0 +1,191 @@
+From b5fbba94923ee8c72a045542d787a678188daba9 Mon Sep 17 00:00:00 2001
+From: Xiaolin Tang <tangxiaolin@loongson.cn>
+Date: Mon, 7 Nov 2022 17:30:02 +0800
+Subject: [PATCH 07/44] LoongArch: Hard Float Support for functions logb{f/ },
+ __ieee754_ilogb{f/ }.
+
+Use hardware Floating-point instruction flogb.{s/d}, fclass.{s/d} to
+implement functions logb{f/ }, __ieee754_ilogb{f/ }.
+
+       *  sysdeps/loongarch/fpu/e_ilogb.c: New file.
+       *  sysdeps/loongarch/fpu/e_ilogbf.c: Likewise.
+       *  sysdeps/loongarch/fpu/s_logb.c: Likewise.
+       *  sysdeps/loongarch/fpu/s_logbf.c: Likewise.
+
+Change-Id: I6481b975c9bfd29ee67819bd28a0c18102302e7a
+---
+ sysdeps/loongarch/fpu/e_ilogb.c  | 39 ++++++++++++++++++++++++++++++++
+ sysdeps/loongarch/fpu/e_ilogbf.c | 39 ++++++++++++++++++++++++++++++++
+ sysdeps/loongarch/fpu/s_logb.c   | 30 ++++++++++++++++++++++++
+ sysdeps/loongarch/fpu/s_logbf.c  | 30 ++++++++++++++++++++++++
+ 4 files changed, 138 insertions(+)
+ create mode 100644 sysdeps/loongarch/fpu/e_ilogb.c
+ create mode 100644 sysdeps/loongarch/fpu/e_ilogbf.c
+ create mode 100644 sysdeps/loongarch/fpu/s_logb.c
+ create mode 100644 sysdeps/loongarch/fpu/s_logbf.c
+
+diff --git a/sysdeps/loongarch/fpu/e_ilogb.c b/sysdeps/loongarch/fpu/e_ilogb.c
+new file mode 100644
+index 0000000000..f9ada6921a
+--- /dev/null
++++ b/sysdeps/loongarch/fpu/e_ilogb.c
+@@ -0,0 +1,39 @@
++/* __ieee754_ilogb().  LoongArch version.
++   Copyright (C) 2022 Free Software Foundation, Inc.
++   This file is part of the GNU C Library.
++
++   The GNU C Library is free software; you can redistribute it and/or
++   modify it under the terms of the GNU Lesser General Public
++   License as published by the Free Software Foundation; either
++   version 2.1 of the License, or (at your option) any later version.
++
++   The GNU C Library is distributed in the hope that it will be useful,
++   but WITHOUT ANY WARRANTY; without even the implied warranty of
++   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++   Lesser General Public License for more details.
++
++   You should have received a copy of the GNU Lesser General Public
++   License along with the GNU C Library; if not, see
++   <https://www.gnu.org/licenses/>.  */
++
++#define NO_MATH_REDIRECT
++#include <math.h>
++#include <fpu_control.h>
++
++int
++__ieee754_ilogb (double x)
++{
++  int x_cond;
++  asm volatile ("fclass.d \t%0, %1" : "=f" (x_cond) : "f" (x));
++
++  if (__glibc_unlikely (x_cond & _FCLASS_ZERO))
++      return FP_ILOGB0;
++  else if (__glibc_unlikely (x_cond & ( _FCLASS_NAN | _FCLASS_INF)))
++      return FP_ILOGBNAN;
++  else
++    {
++      asm volatile ("fabs.d \t%0, %1" : "=f" (x) : "f" (x));
++      asm volatile ("flogb.d \t%0, %1" : "=f" (x) : "f" (x));
++      return x;
++    }
++}
+diff --git a/sysdeps/loongarch/fpu/e_ilogbf.c b/sysdeps/loongarch/fpu/e_ilogbf.c
+new file mode 100644
+index 0000000000..e1da48ecfc
+--- /dev/null
++++ b/sysdeps/loongarch/fpu/e_ilogbf.c
+@@ -0,0 +1,39 @@
++/* __ieee754_ilogbf().  LoongArch version.
++   Copyright (C) 2022 Free Software Foundation, Inc.
++   This file is part of the GNU C Library.
++
++   The GNU C Library is free software; you can redistribute it and/or
++   modify it under the terms of the GNU Lesser General Public
++   License as published by the Free Software Foundation; either
++   version 2.1 of the License, or (at your option) any later version.
++
++   The GNU C Library is distributed in the hope that it will be useful,
++   but WITHOUT ANY WARRANTY; without even the implied warranty of
++   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++   Lesser General Public License for more details.
++
++   You should have received a copy of the GNU Lesser General Public
++   License along with the GNU C Library; if not, see
++   <https://www.gnu.org/licenses/>.  */
++
++#define NO_MATH_REDIRECT
++#include <math.h>
++#include <fpu_control.h>
++
++int
++__ieee754_ilogbf (float x)
++{
++  int x_cond;
++  asm volatile ("fclass.s \t%0, %1" : "=f" (x_cond) : "f" (x));
++
++  if (__glibc_unlikely (x_cond & _FCLASS_ZERO))
++      return FP_ILOGB0;
++  else if (__glibc_unlikely (x_cond & ( _FCLASS_NAN | _FCLASS_INF)))
++      return FP_ILOGBNAN;
++  else
++    {
++      asm volatile ("fabs.s \t%0, %1" : "=f" (x) : "f" (x));
++      asm volatile ("flogb.s \t%0, %1" : "=f" (x) : "f" (x));
++      return x;
++    }
++}
+diff --git a/sysdeps/loongarch/fpu/s_logb.c b/sysdeps/loongarch/fpu/s_logb.c
+new file mode 100644
+index 0000000000..31bb3be5c9
+--- /dev/null
++++ b/sysdeps/loongarch/fpu/s_logb.c
+@@ -0,0 +1,30 @@
++/* logb().  LoongArch version.
++   Copyright (C) 2022 Free Software Foundation, Inc.
++   This file is part of the GNU C Library.
++
++   The GNU C Library is free software; you can redistribute it and/or
++   modify it under the terms of the GNU Lesser General Public
++   License as published by the Free Software Foundation; either
++   version 2.1 of the License, or (at your option) any later version.
++
++   The GNU C Library is distributed in the hope that it will be useful,
++   but WITHOUT ANY WARRANTY; without even the implied warranty of
++   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++   Lesser General Public License for more details.
++
++   You should have received a copy of the GNU Lesser General Public
++   License along with the GNU C Library; if not, see
++   <https://www.gnu.org/licenses/>.  */
++
++#define NO_MATH_REDIRECT
++#include <math.h>
++#include <libm-alias-double.h>
++
++double
++__logb (double x)
++{
++  asm volatile ("fabs.d \t%0, %1" : "=f" (x) : "f" (x));
++  asm volatile ("flogb.d \t%0, %1" : "=f" (x) : "f" (x));
++  return x;
++}
++libm_alias_double (__logb, logb)
+diff --git a/sysdeps/loongarch/fpu/s_logbf.c b/sysdeps/loongarch/fpu/s_logbf.c
+new file mode 100644
+index 0000000000..f5166bcabd
+--- /dev/null
++++ b/sysdeps/loongarch/fpu/s_logbf.c
+@@ -0,0 +1,30 @@
++/* logbf().  LoongArch version.
++   Copyright (C) 2022 Free Software Foundation, Inc.
++   This file is part of the GNU C Library.
++
++   The GNU C Library is free software; you can redistribute it and/or
++   modify it under the terms of the GNU Lesser General Public
++   License as published by the Free Software Foundation; either
++   version 2.1 of the License, or (at your option) any later version.
++
++   The GNU C Library is distributed in the hope that it will be useful,
++   but WITHOUT ANY WARRANTY; without even the implied warranty of
++   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++   Lesser General Public License for more details.
++
++   You should have received a copy of the GNU Lesser General Public
++   License along with the GNU C Library; if not, see
++   <https://www.gnu.org/licenses/>.  */
++
++#define NO_MATH_REDIRECT
++#include <math.h>
++#include <libm-alias-float.h>
++
++float
++__logbf (float x)
++{
++  asm volatile ("fabs.s \t%0, %1" : "=f" (x) : "f" (x));
++  asm volatile ("flogb.s \t%0, %1" : "=f" (x) : "f" (x));
++  return x;
++}
++libm_alias_float (__logb, logb)
+-- 
+2.20.1
+

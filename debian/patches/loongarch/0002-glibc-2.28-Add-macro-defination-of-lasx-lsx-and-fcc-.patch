@@ -1,0 +1,3945 @@
+From be72cc098b3db15066b3132f1fbe707e53c2e688 Mon Sep 17 00:00:00 2001
+From: caiyinyu <caiyinyu@loongson.cn>
+Date: Tue, 11 Jul 2023 15:40:15 +0800
+Subject: [PATCH 02/11] glibc-2.28: Add macro defination of lasx lsx and fcc
+ registers.
+
+Change-Id: Ic723521775a0133e25bf1d568c588f930ec5ff49
+---
+ sysdeps/loongarch/dl-trampoline.h             |  64 +--
+ .../loongarch/lp64/multiarch/memchr-lasx.S    |  74 +--
+ sysdeps/loongarch/lp64/multiarch/memchr-lsx.S |  48 +-
+ .../loongarch/lp64/multiarch/memcmp-lasx.S    | 138 +++---
+ sysdeps/loongarch/lp64/multiarch/memcmp-lsx.S | 194 ++++----
+ .../loongarch/lp64/multiarch/memmove-lasx.S   | 160 +++----
+ .../loongarch/lp64/multiarch/memmove-lsx.S    | 424 +++++++++---------
+ .../loongarch/lp64/multiarch/memrchr-lasx.S   |  74 +--
+ .../loongarch/lp64/multiarch/memrchr-lsx.S    |  48 +-
+ .../loongarch/lp64/multiarch/memset-lasx.S    |  64 +--
+ sysdeps/loongarch/lp64/multiarch/memset-lsx.S |  62 +--
+ .../loongarch/lp64/multiarch/rawmemchr-lasx.S |  30 +-
+ .../loongarch/lp64/multiarch/rawmemchr-lsx.S  |  30 +-
+ sysdeps/loongarch/lp64/multiarch/stpcpy-lsx.S | 114 ++---
+ .../loongarch/lp64/multiarch/strchr-lasx.S    |  52 +--
+ sysdeps/loongarch/lp64/multiarch/strchr-lsx.S |  30 +-
+ sysdeps/loongarch/lp64/multiarch/strcmp-lsx.S | 114 ++---
+ sysdeps/loongarch/lp64/multiarch/strcpy-lsx.S | 112 ++---
+ .../loongarch/lp64/multiarch/strlen-lasx.S    |  24 +-
+ sysdeps/loongarch/lp64/multiarch/strlen-lsx.S |  30 +-
+ .../loongarch/lp64/multiarch/strncmp-lsx.S    | 144 +++---
+ .../loongarch/lp64/multiarch/strnlen-lasx.S   |  46 +-
+ .../loongarch/lp64/multiarch/strnlen-lsx.S    |  30 +-
+ .../loongarch/lp64/multiarch/strrchr-lasx.S   |  88 ++--
+ .../loongarch/lp64/multiarch/strrchr-lsx.S    |  56 +--
+ sysdeps/loongarch/lp64/s_cosf.S               |   4 +-
+ sysdeps/loongarch/lp64/s_sinf.S               |   4 +-
+ sysdeps/loongarch/sys/regdef.h                |  74 +++
+ 28 files changed, 1203 insertions(+), 1129 deletions(-)
+
+diff --git a/sysdeps/loongarch/dl-trampoline.h b/sysdeps/loongarch/dl-trampoline.h
+index fb15983f3d..96f41f1d14 100644
+--- a/sysdeps/loongarch/dl-trampoline.h
++++ b/sysdeps/loongarch/dl-trampoline.h
+@@ -61,23 +61,23 @@ ENTRY (_dl_runtime_resolve, 3)
+ 	FREG_S	fa6, sp, 10*SZREG + 6*SZFREG
+ 	FREG_S	fa7, sp, 10*SZREG + 7*SZFREG
+ #ifdef USE_LASX
+-	xvst	$xr0, sp, 10*SZREG + 0*256
+-	xvst	$xr1, sp, 10*SZREG + 1*256
+-	xvst	$xr2, sp, 10*SZREG + 2*256
+-	xvst	$xr3, sp, 10*SZREG + 3*256
+-	xvst	$xr4, sp, 10*SZREG + 4*256
+-	xvst	$xr5, sp, 10*SZREG + 5*256
+-	xvst	$xr6, sp, 10*SZREG + 6*256
+-	xvst	$xr7, sp, 10*SZREG + 7*256
++	xvst	xr0, sp, 10*SZREG + 0*256
++	xvst	xr1, sp, 10*SZREG + 1*256
++	xvst	xr2, sp, 10*SZREG + 2*256
++	xvst	xr3, sp, 10*SZREG + 3*256
++	xvst	xr4, sp, 10*SZREG + 4*256
++	xvst	xr5, sp, 10*SZREG + 5*256
++	xvst	xr6, sp, 10*SZREG + 6*256
++	xvst	xr7, sp, 10*SZREG + 7*256
+ #elif defined USE_LSX
+-	vst	$vr0, sp, 10*SZREG + 0*128
+-	vst	$vr1, sp, 10*SZREG + 1*128
+-	vst	$vr2, sp, 10*SZREG + 2*128
+-	vst	$vr3, sp, 10*SZREG + 3*128
+-	vst	$vr4, sp, 10*SZREG + 4*128
+-	vst	$vr5, sp, 10*SZREG + 5*128
+-	vst	$vr6, sp, 10*SZREG + 6*128
+-	vst	$vr7, sp, 10*SZREG + 7*128
++	vst	vr0, sp, 10*SZREG + 0*128
++	vst	vr1, sp, 10*SZREG + 1*128
++	vst	vr2, sp, 10*SZREG + 2*128
++	vst	vr3, sp, 10*SZREG + 3*128
++	vst	vr4, sp, 10*SZREG + 4*128
++	vst	vr5, sp, 10*SZREG + 5*128
++	vst	vr6, sp, 10*SZREG + 6*128
++	vst	vr7, sp, 10*SZREG + 7*128
+ #endif
+ #endif
+ 
+@@ -119,23 +119,23 @@ ENTRY (_dl_runtime_resolve, 3)
+ 	FREG_L	fa6, sp, 10*SZREG + 6*SZFREG
+ 	FREG_L	fa7, sp, 10*SZREG + 7*SZFREG
+ #ifdef USE_LASX
+-	xvld	$xr0, sp, 10*SZREG + 0*256
+-	xvld	$xr1, sp, 10*SZREG + 1*256
+-	xvld	$xr2, sp, 10*SZREG + 2*256
+-	xvld	$xr3, sp, 10*SZREG + 3*256
+-	xvld	$xr4, sp, 10*SZREG + 4*256
+-	xvld	$xr5, sp, 10*SZREG + 5*256
+-	xvld	$xr6, sp, 10*SZREG + 6*256
+-	xvld	$xr7, sp, 10*SZREG + 7*256
++	xvld	xr0, sp, 10*SZREG + 0*256
++	xvld	xr1, sp, 10*SZREG + 1*256
++	xvld	xr2, sp, 10*SZREG + 2*256
++	xvld	xr3, sp, 10*SZREG + 3*256
++	xvld	xr4, sp, 10*SZREG + 4*256
++	xvld	xr5, sp, 10*SZREG + 5*256
++	xvld	xr6, sp, 10*SZREG + 6*256
++	xvld	xr7, sp, 10*SZREG + 7*256
+ #elif defined USE_LSX
+-	vld	$vr0, sp, 10*SZREG + 0*128
+-	vld	$vr1, sp, 10*SZREG + 1*128
+-	vld	$vr2, sp, 10*SZREG + 2*128
+-	vld	$vr3, sp, 10*SZREG + 3*128
+-	vld	$vr4, sp, 10*SZREG + 4*128
+-	vld	$vr5, sp, 10*SZREG + 5*128
+-	vld	$vr6, sp, 10*SZREG + 6*128
+-	vld	$vr7, sp, 10*SZREG + 7*128
++	vld	vr0, sp, 10*SZREG + 0*128
++	vld	vr1, sp, 10*SZREG + 1*128
++	vld	vr2, sp, 10*SZREG + 2*128
++	vld	vr3, sp, 10*SZREG + 3*128
++	vld	vr4, sp, 10*SZREG + 4*128
++	vld	vr5, sp, 10*SZREG + 5*128
++	vld	vr6, sp, 10*SZREG + 6*128
++	vld	vr7, sp, 10*SZREG + 7*128
+ #endif
+ #endif
+ 
+diff --git a/sysdeps/loongarch/lp64/multiarch/memchr-lasx.S b/sysdeps/loongarch/lp64/multiarch/memchr-lasx.S
+index 387a35feda..425fcedebf 100644
+--- a/sysdeps/loongarch/lp64/multiarch/memchr-lasx.S
++++ b/sysdeps/loongarch/lp64/multiarch/memchr-lasx.S
+@@ -17,28 +17,28 @@ LEAF(MEMCHR, 6)
+     andi            t0, a0, 0x3f
+     bstrins.d       a0, zero, 5, 0
+ 
+-    xvld            $xr0, a0, 0
+-    xvld            $xr1, a0, 32
++    xvld            xr0, a0, 0
++    xvld            xr1, a0, 32
+     li.d            t1, -1
+     li.d            t2, 64
+ 
+-    xvreplgr2vr.b   $xr2, a1
++    xvreplgr2vr.b   xr2, a1
+     sll.d           t3, t1, t0
+     sub.d           t2, t2, t0
+-    xvseq.b         $xr0, $xr0, $xr2
++    xvseq.b         xr0, xr0, xr2
+ 
+-    xvseq.b         $xr1, $xr1, $xr2
+-    xvmsknz.b       $xr0, $xr0
+-    xvmsknz.b       $xr1, $xr1
+-    xvpickve.w      $xr3, $xr0, 4
++    xvseq.b         xr1, xr1, xr2
++    xvmsknz.b       xr0, xr0
++    xvmsknz.b       xr1, xr1
++    xvpickve.w      xr3, xr0, 4
+ 
+ 
+-    xvpickve.w      $xr4, $xr1, 4
+-    vilvl.h         $vr0, $vr3, $vr0
+-    vilvl.h         $vr1, $vr4, $vr1
+-    vilvl.w         $vr0, $vr1, $vr0
++    xvpickve.w      xr4, xr1, 4
++    vilvl.h         vr0, vr3, vr0
++    vilvl.h         vr1, vr4, vr1
++    vilvl.w         vr0, vr1, vr0
+ 
+-    movfr2gr.d      t0, $f0
++    movfr2gr.d      t0, fa0
+     and             t0, t0, t3
+     bgeu            t2, a2, L(end)
+     bnez            t0, L(found)
+@@ -46,28 +46,28 @@ LEAF(MEMCHR, 6)
+     addi.d          a4, a3, -1
+     bstrins.d       a4, zero, 5, 0
+ L(loop):
+-    xvld            $xr0, a0, 64
+-    xvld            $xr1, a0, 96
++    xvld            xr0, a0, 64
++    xvld            xr1, a0, 96
+ 
+     addi.d          a0, a0, 64
+-    xvseq.b         $xr0, $xr0, $xr2
+-    xvseq.b         $xr1, $xr1, $xr2
++    xvseq.b         xr0, xr0, xr2
++    xvseq.b         xr1, xr1, xr2
+     beq             a0, a4, L(out)
+ 
+ 
+-    xvmax.bu        $xr3, $xr0, $xr1
+-    xvseteqz.v      $fcc0, $xr3
+-    bcnez           $fcc0, L(loop)
+-    xvmsknz.b       $xr0, $xr0
++    xvmax.bu        xr3, xr0, xr1
++    xvseteqz.v      fcc0, xr3
++    bcnez           fcc0, L(loop)
++    xvmsknz.b       xr0, xr0
+ 
+-    xvmsknz.b       $xr1, $xr1
+-    xvpickve.w      $xr3, $xr0, 4
+-    xvpickve.w      $xr4, $xr1, 4
+-    vilvl.h         $vr0, $vr3, $vr0
++    xvmsknz.b       xr1, xr1
++    xvpickve.w      xr3, xr0, 4
++    xvpickve.w      xr4, xr1, 4
++    vilvl.h         vr0, vr3, vr0
+ 
+-    vilvl.h         $vr1, $vr4, $vr1
+-    vilvl.w         $vr0, $vr1, $vr0
+-    movfr2gr.d      t0, $f0
++    vilvl.h         vr1, vr4, vr1
++    vilvl.w         vr0, vr1, vr0
++    movfr2gr.d      t0, fa0
+ L(found):
+     ctz.d           t1, t0
+ 
+@@ -79,15 +79,15 @@ L(ret0):
+ 
+ 
+ L(out):
+-    xvmsknz.b       $xr0, $xr0
+-    xvmsknz.b       $xr1, $xr1
+-    xvpickve.w      $xr3, $xr0, 4
+-    xvpickve.w      $xr4, $xr1, 4
+-
+-    vilvl.h         $vr0, $vr3, $vr0
+-    vilvl.h         $vr1, $vr4, $vr1
+-    vilvl.w         $vr0, $vr1, $vr0
+-    movfr2gr.d      t0, $f0
++    xvmsknz.b       xr0, xr0
++    xvmsknz.b       xr1, xr1
++    xvpickve.w      xr3, xr0, 4
++    xvpickve.w      xr4, xr1, 4
++
++    vilvl.h         vr0, vr3, vr0
++    vilvl.h         vr1, vr4, vr1
++    vilvl.w         vr0, vr1, vr0
++    movfr2gr.d      t0, fa0
+ 
+ L(end):
+     sub.d           t2, zero, a3
+diff --git a/sysdeps/loongarch/lp64/multiarch/memchr-lsx.S b/sysdeps/loongarch/lp64/multiarch/memchr-lsx.S
+index c695265746..08a630d375 100644
+--- a/sysdeps/loongarch/lp64/multiarch/memchr-lsx.S
++++ b/sysdeps/loongarch/lp64/multiarch/memchr-lsx.S
+@@ -17,23 +17,23 @@ LEAF(MEMCHR, 6)
+     andi            t0, a0, 0x1f
+     bstrins.d       a0, zero, 4, 0
+ 
+-    vld             $vr0, a0, 0
+-    vld             $vr1, a0, 16
++    vld             vr0, a0, 0
++    vld             vr1, a0, 16
+     li.d            t1, -1
+     li.d            t2, 32
+ 
+-    vreplgr2vr.b    $vr2, a1
++    vreplgr2vr.b    vr2, a1
+     sll.d           t3, t1, t0
+     sub.d           t2, t2, t0
+-    vseq.b          $vr0, $vr0, $vr2
++    vseq.b          vr0, vr0, vr2
+ 
+-    vseq.b          $vr1, $vr1, $vr2
+-    vmsknz.b        $vr0, $vr0
+-    vmsknz.b        $vr1, $vr1
+-    vilvl.h         $vr0, $vr1, $vr0
++    vseq.b          vr1, vr1, vr2
++    vmsknz.b        vr0, vr0
++    vmsknz.b        vr1, vr1
++    vilvl.h         vr0, vr1, vr0
+ 
+ 
+-    movfr2gr.s      t0, $f0
++    movfr2gr.s      t0, fa0
+     and             t0, t0, t3
+     bgeu            t2, a2, L(end)
+     bnez            t0, L(found)
+@@ -41,23 +41,23 @@ LEAF(MEMCHR, 6)
+     addi.d          a4, a3, -1
+     bstrins.d       a4, zero, 4, 0
+ L(loop):
+-    vld             $vr0, a0, 32
+-    vld             $vr1, a0, 48
++    vld             vr0, a0, 32
++    vld             vr1, a0, 48
+ 
+     addi.d          a0, a0, 32
+-    vseq.b          $vr0, $vr0, $vr2
+-    vseq.b          $vr1, $vr1, $vr2
++    vseq.b          vr0, vr0, vr2
++    vseq.b          vr1, vr1, vr2
+     beq             a0, a4, L(out)
+ 
+-    vmax.bu         $vr3, $vr0, $vr1
+-    vseteqz.v       $fcc0, $vr3
+-    bcnez           $fcc0, L(loop)
+-    vmsknz.b        $vr0, $vr0
++    vmax.bu         vr3, vr0, vr1
++    vseteqz.v       fcc0, vr3
++    bcnez           fcc0, L(loop)
++    vmsknz.b        vr0, vr0
+ 
+ 
+-    vmsknz.b        $vr1, $vr1
+-    vilvl.h         $vr0, $vr1, $vr0
+-    movfr2gr.s      t0, $f0
++    vmsknz.b        vr1, vr1
++    vilvl.h         vr0, vr1, vr0
++    movfr2gr.s      t0, fa0
+ L(found):
+     ctz.w           t0, t0
+ 
+@@ -68,10 +68,10 @@ L(ret0):
+     jr              ra
+ 
+ L(out):
+-    vmsknz.b        $vr0, $vr0
+-    vmsknz.b        $vr1, $vr1
+-    vilvl.h         $vr0, $vr1, $vr0
+-    movfr2gr.s      t0, $f0
++    vmsknz.b        vr0, vr0
++    vmsknz.b        vr1, vr1
++    vilvl.h         vr0, vr1, vr0
++    movfr2gr.s      t0, fa0
+ 
+ L(end):
+     sub.d           t2, zero, a3
+diff --git a/sysdeps/loongarch/lp64/multiarch/memcmp-lasx.S b/sysdeps/loongarch/lp64/multiarch/memcmp-lasx.S
+index 9151d38d77..2c192954a8 100644
+--- a/sysdeps/loongarch/lp64/multiarch/memcmp-lasx.S
++++ b/sysdeps/loongarch/lp64/multiarch/memcmp-lasx.S
+@@ -20,39 +20,39 @@ LEAF(MEMCMP, 6)
+     li.d            t1, 160
+     bgeu            a2, t1, L(make_aligned)  # a2 >= 160
+ L(loop32):
+-    xvld            $xr0, a0, 0
+-    xvld            $xr1, a1, 0
++    xvld            xr0, a0, 0
++    xvld            xr1, a1, 0
+ 
+     addi.d          a0, a0, 32
+     addi.d          a1, a1, 32
+     addi.d          a2, a2, -32
+-    xvseq.b         $xr2, $xr0, $xr1
++    xvseq.b         xr2, xr0, xr1
+ 
+-    xvsetanyeqz.b   $fcc0, $xr2
+-    bcnez           $fcc0, L(end)
++    xvsetanyeqz.b   fcc0, xr2
++    bcnez           fcc0, L(end)
+ L(last_bytes):
+     bltu            t2, a2, L(loop32)
+-    xvld            $xr0, a3, -32
++    xvld            xr0, a3, -32
+ 
+ 
+-    xvld            $xr1, a4, -32
+-    xvseq.b         $xr2, $xr0, $xr1
++    xvld            xr1, a4, -32
++    xvseq.b         xr2, xr0, xr1
+ L(end):
+-    xvmsknz.b       $xr2, $xr2
+-    xvpermi.q       $xr4, $xr0, 1
++    xvmsknz.b       xr2, xr2
++    xvpermi.q       xr4, xr0, 1
+ 
+-    xvpickve.w      $xr3, $xr2, 4
+-    xvpermi.q       $xr5, $xr1, 1
+-    vilvl.h         $vr2, $vr3, $vr2
+-    movfr2gr.s      t0, $f2
++    xvpickve.w      xr3, xr2, 4
++    xvpermi.q       xr5, xr1, 1
++    vilvl.h         vr2, vr3, vr2
++    movfr2gr.s      t0, fa2
+ 
+     cto.w           t0, t0
+-    vreplgr2vr.b    $vr2, t0
+-    vshuf.b         $vr0, $vr4, $vr0, $vr2
+-    vshuf.b         $vr1, $vr5, $vr1, $vr2
++    vreplgr2vr.b    vr2, t0
++    vshuf.b         vr0, vr4, vr0, vr2
++    vshuf.b         vr1, vr5, vr1, vr2
+ 
+-    vpickve2gr.bu   t0, $vr0, 0
+-    vpickve2gr.bu   t1, $vr1, 0
++    vpickve2gr.bu   t0, vr0, 0
++    vpickve2gr.bu   t1, vr1, 0
+     sub.d           a0, t0, t1
+     jr              ra
+ 
+@@ -60,59 +60,59 @@ L(end):
+ L(less32):
+     srli.d          t0, a2, 4
+     beqz            t0, L(less16)
+-    vld             $vr0, a0, 0
+-    vld             $vr1, a1, 0
++    vld             vr0, a0, 0
++    vld             vr1, a1, 0
+ 
+-    vld             $vr2, a3, -16
+-    vld             $vr3, a4, -16
++    vld             vr2, a3, -16
++    vld             vr3, a4, -16
+ L(short_ret):
+-    vseq.b          $vr4, $vr0, $vr1
+-    vseq.b          $vr5, $vr2, $vr3
++    vseq.b          vr4, vr0, vr1
++    vseq.b          vr5, vr2, vr3
+ 
+-    vmsknz.b        $vr4, $vr4
+-    vmsknz.b        $vr5, $vr5
+-    vilvl.h         $vr4, $vr5, $vr4
+-    movfr2gr.s      t0, $f4
++    vmsknz.b        vr4, vr4
++    vmsknz.b        vr5, vr5
++    vilvl.h         vr4, vr5, vr4
++    movfr2gr.s      t0, fa4
+ 
+     cto.w           t0, t0
+-    vreplgr2vr.b    $vr4, t0
+-    vshuf.b         $vr0, $vr2, $vr0, $vr4
+-    vshuf.b         $vr1, $vr3, $vr1, $vr4
++    vreplgr2vr.b    vr4, t0
++    vshuf.b         vr0, vr2, vr0, vr4
++    vshuf.b         vr1, vr3, vr1, vr4
+ 
+ 
+-    vpickve2gr.bu   t0, $vr0, 0
+-    vpickve2gr.bu   t1, $vr1, 0
++    vpickve2gr.bu   t0, vr0, 0
++    vpickve2gr.bu   t1, vr1, 0
+     sub.d           a0, t0, t1
+     jr              ra
+ 
+ L(less16):
+     srli.d          t0, a2, 3
+     beqz            t0, L(less8)
+-    vldrepl.d       $vr0, a0, 0
+-    vldrepl.d       $vr1, a1, 0
++    vldrepl.d       vr0, a0, 0
++    vldrepl.d       vr1, a1, 0
+ 
+-    vldrepl.d       $vr2, a3, -8
+-    vldrepl.d       $vr3, a4, -8
++    vldrepl.d       vr2, a3, -8
++    vldrepl.d       vr3, a4, -8
+     b               L(short_ret)
+ L(less8):
+     srli.d          t0, a2, 2
+ 
+     beqz            t0, L(less4)
+-    vldrepl.w       $vr0, a0, 0
+-    vldrepl.w       $vr1, a1, 0
+-    vldrepl.w       $vr2, a3, -4
++    vldrepl.w       vr0, a0, 0
++    vldrepl.w       vr1, a1, 0
++    vldrepl.w       vr2, a3, -4
+ 
+ 
+-    vldrepl.w       $vr3, a4, -4
++    vldrepl.w       vr3, a4, -4
+     b               L(short_ret)
+ L(less4):
+     srli.d          t0, a2, 1
+     beqz            t0, L(less2)
+ 
+-    vldrepl.h       $vr0, a0, 0
+-    vldrepl.h       $vr1, a1, 0
+-    vldrepl.h       $vr2, a3, -2
+-    vldrepl.h       $vr3, a4, -2
++    vldrepl.h       vr0, a0, 0
++    vldrepl.h       vr1, a1, 0
++    vldrepl.h       vr2, a3, -2
++    vldrepl.h       vr3, a4, -2
+ 
+     b               L(short_ret)
+ L(less2):
+@@ -132,12 +132,12 @@ L(ret0):
+     nop
+ /* make src1 aligned, and adjust scr2 and length. */
+ L(make_aligned):
+-    xvld            $xr0, a0, 0
++    xvld            xr0, a0, 0
+ 
+-    xvld            $xr1, a1, 0
+-    xvseq.b         $xr2, $xr0, $xr1
+-    xvsetanyeqz.b   $fcc0, $xr2
+-    bcnez           $fcc0, L(end)
++    xvld            xr1, a1, 0
++    xvseq.b         xr2, xr0, xr1
++    xvsetanyeqz.b   fcc0, xr2
++    bcnez           fcc0, L(end)
+ 
+     andi            t0, a0, 0x1f
+     sub.d           t0, t2, t0
+@@ -151,17 +151,17 @@ L(make_aligned):
+ 
+ 
+ L(loop_align):
+-    xvld            $xr0, a0, 0
+-    xvld            $xr1, a1, 0
+-    xvld            $xr2, a0, 32
+-    xvld            $xr3, a1, 32
++    xvld            xr0, a0, 0
++    xvld            xr1, a1, 0
++    xvld            xr2, a0, 32
++    xvld            xr3, a1, 32
+ 
+-    xvseq.b         $xr0, $xr0, $xr1
+-    xvseq.b         $xr1, $xr2, $xr3
+-    xvmin.bu        $xr2, $xr1, $xr0
+-    xvsetanyeqz.b   $fcc0, $xr2
++    xvseq.b         xr0, xr0, xr1
++    xvseq.b         xr1, xr2, xr3
++    xvmin.bu        xr2, xr1, xr0
++    xvsetanyeqz.b   fcc0, xr2
+ 
+-    bcnez           $fcc0, L(pair_end)
++    bcnez           fcc0, L(pair_end)
+     addi.d          a0, a0, 64
+     addi.d          a1, a1, 64
+     bne             a0, a5, L(loop_align)
+@@ -173,15 +173,15 @@ L(loop_align):
+ 
+ 
+ L(pair_end):
+-    xvmsknz.b       $xr0, $xr0
+-    xvmsknz.b       $xr1, $xr1
+-    xvpickve.w      $xr2, $xr0, 4
+-    xvpickve.w      $xr3, $xr1, 4
+-
+-    vilvl.h         $vr0, $vr2, $vr0
+-    vilvl.h         $vr1, $vr3, $vr1
+-    vilvl.w         $vr0, $vr1, $vr0
+-    movfr2gr.d      t0, $f0
++    xvmsknz.b       xr0, xr0
++    xvmsknz.b       xr1, xr1
++    xvpickve.w      xr2, xr0, 4
++    xvpickve.w      xr3, xr1, 4
++
++    vilvl.h         vr0, vr2, vr0
++    vilvl.h         vr1, vr3, vr1
++    vilvl.w         vr0, vr1, vr0
++    movfr2gr.d      t0, fa0
+ 
+     cto.d           t0, t0
+     ldx.bu          t1, a0, t0
+diff --git a/sysdeps/loongarch/lp64/multiarch/memcmp-lsx.S b/sysdeps/loongarch/lp64/multiarch/memcmp-lsx.S
+index 8535aa22d7..b407275fc0 100644
+--- a/sysdeps/loongarch/lp64/multiarch/memcmp-lsx.S
++++ b/sysdeps/loongarch/lp64/multiarch/memcmp-lsx.S
+@@ -21,28 +21,28 @@ ENTRY_NO_ALIGN(MEMCMP)
+     pcaddi          t0, -7
+ 
+     andi            a3, a0, 0xf
+-    vld             $vr5, t0, 0
++    vld             vr5, t0, 0
+     andi            a4, a1, 0xf
+     bne             a3, a4, L(unaligned)
+ 
+     bstrins.d       a0, zero, 3, 0
+     xor             a1, a1, a4
+-    vld             $vr0, a0, 0
+-    vld             $vr1, a1, 0
++    vld             vr0, a0, 0
++    vld             vr1, a1, 0
+ 
+ 
+     li.d            t0, 16
+-    vreplgr2vr.b    $vr3, a3
++    vreplgr2vr.b    vr3, a3
+     sub.d           t1, t0, a3
+-    vadd.b          $vr3, $vr3, $vr5
++    vadd.b          vr3, vr3, vr5
+ 
+-    vshuf.b         $vr0, $vr3, $vr0, $vr3
+-    vshuf.b         $vr1, $vr3, $vr1, $vr3
+-    vseq.b          $vr4, $vr0, $vr1
++    vshuf.b         vr0, vr3, vr0, vr3
++    vshuf.b         vr1, vr3, vr1, vr3
++    vseq.b          vr4, vr0, vr1
+     bgeu            t1, a2, L(al_end)
+ 
+-    vsetanyeqz.b    $fcc0, $vr4
+-    bcnez           $fcc0, L(al_found)
++    vsetanyeqz.b    fcc0, vr4
++    bcnez           fcc0, L(al_found)
+     sub.d           a2, a2, t1
+     andi            t1, a2, 31
+ 
+@@ -53,70 +53,70 @@ ENTRY_NO_ALIGN(MEMCMP)
+ 
+ 
+ L(al_loop):
+-    vld             $vr0, a0, 16
+-    vld             $vr1, a1, 16
+-    vld             $vr2, a0, 32
+-    vld             $vr3, a1, 32
++    vld             vr0, a0, 16
++    vld             vr1, a1, 16
++    vld             vr2, a0, 32
++    vld             vr3, a1, 32
+ 
+     addi.d          a0, a0, 32
+     addi.d          a1, a1, 32
+-    vseq.b          $vr4, $vr0, $vr1
+-    vseq.b          $vr6, $vr2, $vr3
++    vseq.b          vr4, vr0, vr1
++    vseq.b          vr6, vr2, vr3
+ 
+-    vand.v          $vr6, $vr4, $vr6
+-    vsetanyeqz.b    $fcc0, $vr6
+-    bcnez           $fcc0, L(al_pair_end)
++    vand.v          vr6, vr4, vr6
++    vsetanyeqz.b    fcc0, vr6
++    bcnez           fcc0, L(al_pair_end)
+     bne             a0, a4, L(al_loop)
+ 
+ L(al_less_32bytes):
+     bgeu            t0, a2, L(al_less_16bytes)
+-    vld             $vr0, a0, 16
+-    vld             $vr1, a1, 16
+-    vld             $vr2, a0, 32
++    vld             vr0, a0, 16
++    vld             vr1, a1, 16
++    vld             vr2, a0, 32
+ 
+ 
+-    vld             $vr3, a1, 32
++    vld             vr3, a1, 32
+     addi.d          a2, a2, -16
+-    vreplgr2vr.b    $vr6, a2
+-    vslt.b          $vr5, $vr5, $vr6
++    vreplgr2vr.b    vr6, a2
++    vslt.b          vr5, vr5, vr6
+ 
+-    vseq.b          $vr4, $vr0, $vr1
+-    vseq.b          $vr6, $vr2, $vr3
+-    vorn.v          $vr6, $vr6, $vr5
++    vseq.b          vr4, vr0, vr1
++    vseq.b          vr6, vr2, vr3
++    vorn.v          vr6, vr6, vr5
+ L(al_pair_end):
+-    vsetanyeqz.b    $fcc0, $vr4
++    vsetanyeqz.b    fcc0, vr4
+ 
+-    bcnez           $fcc0, L(al_found)
+-    vnori.b         $vr4, $vr6, 0
+-    vfrstpi.b       $vr4, $vr4, 0
+-    vshuf.b         $vr0, $vr2, $vr2, $vr4
++    bcnez           fcc0, L(al_found)
++    vnori.b         vr4, vr6, 0
++    vfrstpi.b       vr4, vr4, 0
++    vshuf.b         vr0, vr2, vr2, vr4
+ 
+-    vshuf.b         $vr1, $vr3, $vr3, $vr4
+-    vpickve2gr.bu   t0, $vr0, 0
+-    vpickve2gr.bu   t1, $vr1, 0
++    vshuf.b         vr1, vr3, vr3, vr4
++    vpickve2gr.bu   t0, vr0, 0
++    vpickve2gr.bu   t1, vr1, 0
+     sub.d           a0, t0, t1
+ 
+ 
+     jr              ra
+ L(al_less_16bytes):
+     beqz            a2, L(out)
+-    vld             $vr0, a0, 16
+-    vld             $vr1, a1, 16
++    vld             vr0, a0, 16
++    vld             vr1, a1, 16
+ 
+-    vseq.b          $vr4, $vr0, $vr1
++    vseq.b          vr4, vr0, vr1
+ L(al_end):
+-    vreplgr2vr.b    $vr6, a2
+-    vslt.b          $vr5, $vr5, $vr6
+-    vorn.v          $vr4, $vr4, $vr5
++    vreplgr2vr.b    vr6, a2
++    vslt.b          vr5, vr5, vr6
++    vorn.v          vr4, vr4, vr5
+ 
+ L(al_found):
+-    vnori.b         $vr4, $vr4, 0
+-    vfrstpi.b       $vr4, $vr4, 0
+-    vshuf.b         $vr0, $vr0, $vr0, $vr4
+-    vshuf.b         $vr1, $vr1, $vr1, $vr4
++    vnori.b         vr4, vr4, 0
++    vfrstpi.b       vr4, vr4, 0
++    vshuf.b         vr0, vr0, vr0, vr4
++    vshuf.b         vr1, vr1, vr1, vr4
+ 
+-    vpickve2gr.bu   t0, $vr0, 0
+-    vpickve2gr.bu   t1, $vr1, 0
++    vpickve2gr.bu   t0, vr0, 0
++    vpickve2gr.bu   t1, vr1, 0
+     sub.d           a0, t0, t1
+     jr              ra
+ 
+@@ -133,28 +133,28 @@ L(unaligned):
+     bstrins.d       a0, zero, 3, 0
+ 
+     xor             a1, a1, a4
+-    vld             $vr4, a0, 0
+-    vld             $vr1, a1, 0
++    vld             vr4, a0, 0
++    vld             vr1, a1, 0
+     li.d            t0, 16
+ 
+-    vreplgr2vr.b    $vr2, a4
++    vreplgr2vr.b    vr2, a4
+     sub.d           a6, a4, a3  # a6 hold the diff
+     sub.d           t1, t0, a4
+     sub.d           t2, t0, a6
+ 
+ 
+-    vadd.b          $vr2, $vr2, $vr5 # [4, 5, 6, ...]
+-    vreplgr2vr.b    $vr6, t2
+-    vadd.b          $vr6, $vr6, $vr5 # [14, 15, 16, ... ]
+-    vshuf.b         $vr0, $vr4, $vr4, $vr6  # make data be in the same position
++    vadd.b          vr2, vr2, vr5 # [4, 5, 6, ...]
++    vreplgr2vr.b    vr6, t2
++    vadd.b          vr6, vr6, vr5 # [14, 15, 16, ... ]
++    vshuf.b         vr0, vr4, vr4, vr6  # make data be in the same position
+ 
+-    vshuf.b         $vr1, $vr2, $vr1, $vr2
+-    vshuf.b         $vr0, $vr2, $vr0, $vr2
+-    vseq.b          $vr7, $vr0, $vr1
++    vshuf.b         vr1, vr2, vr1, vr2
++    vshuf.b         vr0, vr2, vr0, vr2
++    vseq.b          vr7, vr0, vr1
+     bgeu            t1, a2, L(un_end)
+ 
+-    vsetanyeqz.b    $fcc0, $vr7
+-    bcnez           $fcc0, L(un_found)
++    vsetanyeqz.b    fcc0, vr7
++    bcnez           fcc0, L(un_found)
+     sub.d           a2, a2, t1
+     andi            t1, a2, 31
+ 
+@@ -165,63 +165,63 @@ L(unaligned):
+ 
+ 
+ L(un_loop):
+-    vld             $vr2, a0, 16
+-    vld             $vr1, a1, 16
+-    vld             $vr3, a1, 32
++    vld             vr2, a0, 16
++    vld             vr1, a1, 16
++    vld             vr3, a1, 32
+     addi.d          a1, a1, 32
+ 
+     addi.d          a0, a0, 32
+-    vshuf.b         $vr0, $vr2, $vr4, $vr6
+-    vld             $vr4, a0, 0
+-    vseq.b          $vr7, $vr0, $vr1
++    vshuf.b         vr0, vr2, vr4, vr6
++    vld             vr4, a0, 0
++    vseq.b          vr7, vr0, vr1
+ 
+-    vshuf.b         $vr2, $vr4, $vr2, $vr6
+-    vseq.b          $vr8, $vr2, $vr3
+-    vand.v          $vr8, $vr7, $vr8
+-    vsetanyeqz.b    $fcc0, $vr8
++    vshuf.b         vr2, vr4, vr2, vr6
++    vseq.b          vr8, vr2, vr3
++    vand.v          vr8, vr7, vr8
++    vsetanyeqz.b    fcc0, vr8
+ 
+-    bcnez           $fcc0, L(un_pair_end)
++    bcnez           fcc0, L(un_pair_end)
+     bne             a1, a4, L(un_loop)
+ L(un_less_32bytes):
+     bltu            a2, t0, L(un_less_16bytes)
+-    vld             $vr2, a0, 16
++    vld             vr2, a0, 16
+ 
+ 
+-    vld             $vr1, a1, 16
++    vld             vr1, a1, 16
+     addi.d          a0, a0, 16
+     addi.d          a1, a1, 16
+     addi.d          a2, a2, -16
+ 
+-    vshuf.b         $vr0, $vr2, $vr4, $vr6
+-    vor.v           $vr4, $vr2, $vr2
+-    vseq.b          $vr7, $vr0, $vr1
+-    vsetanyeqz.b    $fcc0, $vr7
++    vshuf.b         vr0, vr2, vr4, vr6
++    vor.v           vr4, vr2, vr2
++    vseq.b          vr7, vr0, vr1
++    vsetanyeqz.b    fcc0, vr7
+ 
+-    bcnez           $fcc0, L(un_found)
++    bcnez           fcc0, L(un_found)
+ L(un_less_16bytes):
+     beqz            a2, L(out)
+-    vld             $vr1, a1, 16
++    vld             vr1, a1, 16
+     bgeu            a6, a2, 1f
+ 
+-    vld             $vr2, a0, 16
++    vld             vr2, a0, 16
+ 1:
+-    vshuf.b         $vr0, $vr2, $vr4, $vr6
+-    vseq.b          $vr7, $vr0, $vr1
++    vshuf.b         vr0, vr2, vr4, vr6
++    vseq.b          vr7, vr0, vr1
+ L(un_end):
+-    vreplgr2vr.b    $vr3, a2
++    vreplgr2vr.b    vr3, a2
+ 
+ 
+-    vslt.b          $vr3, $vr5, $vr3
+-    vorn.v          $vr7, $vr7, $vr3
++    vslt.b          vr3, vr5, vr3
++    vorn.v          vr7, vr7, vr3
+ L(un_found):
+-    vnori.b         $vr7, $vr7, 0
+-    vfrstpi.b       $vr7, $vr7, 0
++    vnori.b         vr7, vr7, 0
++    vfrstpi.b       vr7, vr7, 0
+ 
+-    vshuf.b         $vr0, $vr0, $vr0, $vr7
+-    vshuf.b         $vr1, $vr1, $vr1, $vr7
++    vshuf.b         vr0, vr0, vr0, vr7
++    vshuf.b         vr1, vr1, vr1, vr7
+ L(calc_result):
+-    vpickve2gr.bu   t0, $vr0, 0
+-    vpickve2gr.bu   t1, $vr1, 0
++    vpickve2gr.bu   t0, vr0, 0
++    vpickve2gr.bu   t1, vr1, 0
+ 
+     sub.d           t2, t0, t1
+     sub.d           t3, t1, t0
+@@ -231,14 +231,14 @@ L(calc_result):
+     or              a0, t0, t1
+     jr              ra
+ L(un_pair_end):
+-    vsetanyeqz.b    $fcc0, $vr7
+-    bcnez           $fcc0, L(un_found)
++    vsetanyeqz.b    fcc0, vr7
++    bcnez           fcc0, L(un_found)
+ 
+ 
+-    vnori.b         $vr7, $vr8, 0
+-    vfrstpi.b       $vr7, $vr7, 0
+-    vshuf.b         $vr0, $vr2, $vr2, $vr7
+-    vshuf.b         $vr1, $vr3, $vr3, $vr7
++    vnori.b         vr7, vr8, 0
++    vfrstpi.b       vr7, vr7, 0
++    vshuf.b         vr0, vr2, vr2, vr7
++    vshuf.b         vr1, vr3, vr3, vr7
+ 
+     b               L(calc_result)
+ L(out):
+diff --git a/sysdeps/loongarch/lp64/multiarch/memmove-lasx.S b/sysdeps/loongarch/lp64/multiarch/memmove-lasx.S
+index e8b2c4411a..c317592fd4 100644
+--- a/sysdeps/loongarch/lp64/multiarch/memmove-lasx.S
++++ b/sysdeps/loongarch/lp64/multiarch/memmove-lasx.S
+@@ -26,22 +26,22 @@ LEAF(MEMCPY_NAME, 6)
+ 
+     li.d            t1, 64
+     bltu            t1, a2, L(copy_long)    # a2 > 64
+-    xvld            $xr0, a1, 0
+-    xvld            $xr1, a4, -32
++    xvld            xr0, a1, 0
++    xvld            xr1, a4, -32
+ 
+-    xvst            $xr0, a0, 0
+-    xvst            $xr1, a3, -32
++    xvst            xr0, a0, 0
++    xvst            xr1, a3, -32
+     jr              ra
+ L(less_32bytes):
+     srli.d          t0, a2, 4
+ 
+     beqz            t0, L(less_16bytes)
+-    vld             $vr0, a1, 0
+-    vld             $vr1, a4, -16
+-    vst             $vr0, a0, 0
++    vld             vr0, a1, 0
++    vld             vr1, a4, -16
++    vst             vr0, a0, 0
+ 
+ 
+-    vst             $vr1, a3, -16
++    vst             vr1, a3, -16
+     jr              ra
+ L(less_16bytes):
+     srli.d          t0, a2, 3
+@@ -91,11 +91,11 @@ LEAF(MEMMOVE_NAME, 6)
+ 
+     li.d            t1, 64
+     bltu            t1, a2, L(move_long)    # a2 > 64
+-    xvld            $xr0, a1, 0
+-    xvld            $xr1, a4, -32
++    xvld            xr0, a1, 0
++    xvld            xr1, a4, -32
+ 
+-    xvst            $xr0, a0, 0
+-    xvst            $xr1, a3, -32
++    xvst            xr0, a0, 0
++    xvst            xr1, a3, -32
+     jr              ra
+ L(move_long):
+     sub.d           t2, a0, a1
+@@ -107,8 +107,8 @@ L(copy_long):
+     sub.d           t2, t0, t2
+ 
+ 
+-    xvld            $xr8, a1, 0
+-    xvld            $xr9, a4, -32
++    xvld            xr8, a1, 0
++    xvld            xr9, a4, -32
+     sub.d           t3, a2, t2
+     add.d           a5, a0, t2
+ 
+@@ -119,69 +119,69 @@ L(copy_long):
+ 
+     addi.d          a6, a6, -1
+ L(loop_256):
+-    xvld            $xr0, a1, 0
+-    xvld            $xr1, a1, 32
+-    xvld            $xr2, a1, 64
++    xvld            xr0, a1, 0
++    xvld            xr1, a1, 32
++    xvld            xr2, a1, 64
+ 
+-    xvld            $xr3, a1, 96
+-    xvld            $xr4, a1, 128
+-    xvld            $xr5, a1, 160
+-    xvld            $xr6, a1, 192
++    xvld            xr3, a1, 96
++    xvld            xr4, a1, 128
++    xvld            xr5, a1, 160
++    xvld            xr6, a1, 192
+ 
+ 
+-    xvld            $xr7, a1, 224
++    xvld            xr7, a1, 224
+     addi.d          a1, a1, 256
+-    xvst            $xr0, a5, 0
+-    xvst            $xr1, a5, 32
++    xvst            xr0, a5, 0
++    xvst            xr1, a5, 32
+ 
+-    xvst            $xr2, a5, 64
+-    xvst            $xr3, a5, 96
+-    xvst            $xr4, a5, 128
+-    xvst            $xr5, a5, 160
++    xvst            xr2, a5, 64
++    xvst            xr3, a5, 96
++    xvst            xr4, a5, 128
++    xvst            xr5, a5, 160
+ 
+-    xvst            $xr6, a5, 192
+-    xvst            $xr7, a5, 224
++    xvst            xr6, a5, 192
++    xvst            xr7, a5, 224
+     addi.d          a5, a5, 256
+     bne             a1, a6, L(loop_256)
+ 
+ L(lt256):
+     srli.d          t2, a2, 7
+     beqz            t2, L(lt128)
+-    xvld            $xr0, a1, 0
+-    xvld            $xr1, a1, 32
++    xvld            xr0, a1, 0
++    xvld            xr1, a1, 32
+ 
+ 
+-    xvld            $xr2, a1, 64
+-    xvld            $xr3, a1, 96
++    xvld            xr2, a1, 64
++    xvld            xr3, a1, 96
+     addi.d          a1, a1, 128
+     addi.d          a2, a2, -128
+ 
+-    xvst            $xr0, a5, 0
+-    xvst            $xr1, a5, 32
+-    xvst            $xr2, a5, 64
+-    xvst            $xr3, a5, 96
++    xvst            xr0, a5, 0
++    xvst            xr1, a5, 32
++    xvst            xr2, a5, 64
++    xvst            xr3, a5, 96
+ 
+     addi.d          a5, a5, 128
+ L(lt128):
+     bltu            a2, t1, L(lt64)
+-    xvld            $xr0, a1, 0
+-    xvld            $xr1, a1, 32
++    xvld            xr0, a1, 0
++    xvld            xr1, a1, 32
+ 
+     addi.d          a1, a1, 64
+     addi.d          a2, a2, -64
+-    xvst            $xr0, a5, 0
+-    xvst            $xr1, a5, 32
++    xvst            xr0, a5, 0
++    xvst            xr1, a5, 32
+ 
+ 
+     addi.d          a5, a5, 64
+ L(lt64):
+     bltu            a2, t0, L(lt32)
+-    xvld            $xr0, a1, 0
+-    xvst            $xr0, a5, 0
++    xvld            xr0, a1, 0
++    xvst            xr0, a5, 0
+ 
+ L(lt32):
+-    xvst            $xr8, a0, 0
+-    xvst            $xr9, a3, -32
++    xvst            xr8, a0, 0
++    xvst            xr9, a3, -32
+     jr              ra
+     nop
+ 
+@@ -189,9 +189,9 @@ L(copy_back):
+     addi.d          a3, a3, -1
+     addi.d          a2, a2, -2
+     andi            t2, a3, 0x1f
+-    xvld            $xr8, a1, 0
++    xvld            xr8, a1, 0
+ 
+-    xvld            $xr9, a4, -32
++    xvld            xr9, a4, -32
+     sub.d           t3, a2, t2
+     sub.d           a5, a3, t2
+     sub.d           a4, a4, t2
+@@ -203,69 +203,69 @@ L(copy_back):
+     addi.d          a6, a6, 2
+ 
+ L(back_loop_256):
+-    xvld            $xr0, a4, -33
+-    xvld            $xr1, a4, -65
+-    xvld            $xr2, a4, -97
+-    xvld            $xr3, a4, -129
++    xvld            xr0, a4, -33
++    xvld            xr1, a4, -65
++    xvld            xr2, a4, -97
++    xvld            xr3, a4, -129
+ 
+-    xvld            $xr4, a4, -161
+-    xvld            $xr5, a4, -193
+-    xvld            $xr6, a4, -225
+-    xvld            $xr7, a4, -257
++    xvld            xr4, a4, -161
++    xvld            xr5, a4, -193
++    xvld            xr6, a4, -225
++    xvld            xr7, a4, -257
+ 
+     addi.d          a4, a4, -256
+-    xvst            $xr0, a5, -32
+-    xvst            $xr1, a5, -64
+-    xvst            $xr2, a5, -96
++    xvst            xr0, a5, -32
++    xvst            xr1, a5, -64
++    xvst            xr2, a5, -96
+ 
+ 
+-    xvst            $xr3, a5, -128
+-    xvst            $xr4, a5, -160
+-    xvst            $xr5, a5, -192
+-    xvst            $xr6, a5, -224
++    xvst            xr3, a5, -128
++    xvst            xr4, a5, -160
++    xvst            xr5, a5, -192
++    xvst            xr6, a5, -224
+ 
+-    xvst            $xr7, a5, -256
++    xvst            xr7, a5, -256
+     addi.d          a5, a5, -256
+     bne             a4, a6, L(back_loop_256)
+ L(back_lt256):
+     srli.d          t2, a2, 7
+ 
+     beqz            t2, L(back_lt128)
+-    xvld            $xr0, a4, -33
+-    xvld            $xr1, a4, -65
+-    xvld            $xr2, a4, -97
++    xvld            xr0, a4, -33
++    xvld            xr1, a4, -65
++    xvld            xr2, a4, -97
+ 
+-    xvld            $xr3, a4, -129
++    xvld            xr3, a4, -129
+     addi.d          a2, a2, -128
+     addi.d          a4, a4, -128
+-    xvst            $xr0, a5, -32
++    xvst            xr0, a5, -32
+ 
+ 
+-    xvst            $xr1, a5, -64
+-    xvst            $xr2, a5, -96
+-    xvst            $xr3, a5, -128
++    xvst            xr1, a5, -64
++    xvst            xr2, a5, -96
++    xvst            xr3, a5, -128
+     addi.d          a5, a5, -128
+ 
+ L(back_lt128):
+     blt             a2, t1, L(back_lt64)
+-    xvld            $xr0, a4, -33
+-    xvld            $xr1, a4, -65
++    xvld            xr0, a4, -33
++    xvld            xr1, a4, -65
+     addi.d          a2, a2, -64
+ 
+     addi.d          a4, a4, -64
+-    xvst            $xr0, a5, -32
+-    xvst            $xr1, a5, -64
++    xvst            xr0, a5, -32
++    xvst            xr1, a5, -64
+     addi.d          a5, a5, -64
+ 
+ L(back_lt64):
+     bltu            a2, t0, L(back_lt32)
+-    xvld            $xr0, a4, -33
+-    xvst            $xr0, a5, -32
++    xvld            xr0, a4, -33
++    xvst            xr0, a5, -32
+ L(back_lt32):
+-    xvst            $xr8, a0, 0
++    xvst            xr8, a0, 0
+ 
+ 
+-    xvst            $xr9, a3, -31
++    xvst            xr9, a3, -31
+     jr              ra
+ END(MEMMOVE_NAME)
+ 
+diff --git a/sysdeps/loongarch/lp64/multiarch/memmove-lsx.S b/sysdeps/loongarch/lp64/multiarch/memmove-lsx.S
+index 90f89c7a01..77f1b4ab4e 100644
+--- a/sysdeps/loongarch/lp64/multiarch/memmove-lsx.S
++++ b/sysdeps/loongarch/lp64/multiarch/memmove-lsx.S
+@@ -23,54 +23,54 @@ LEAF(MEMCPY_NAME, 6)
+     bltu            t8, a2, L(copy_long)   # a2 > 64
+     bltu            t7, a2, L(more_32bytes) # a2 > 32
+ 
+-    vld             $vr0, a1, 0
+-    vld             $vr1, a4, -16
+-    vst             $vr0, a0, 0
+-    vst             $vr1, a3, -16
++    vld             vr0, a1, 0
++    vld             vr1, a4, -16
++    vst             vr0, a0, 0
++    vst             vr1, a3, -16
+ 
+     jr              ra
+ L(more_32bytes):
+-    vld             $vr0, a1, 0
+-    vld             $vr1, a1, 16
+-    vld             $vr2, a4, -32
++    vld             vr0, a1, 0
++    vld             vr1, a1, 16
++    vld             vr2, a4, -32
+ 
+ 
+-    vld             $vr3, a4, -16
+-    vst             $vr0, a0, 0
+-    vst             $vr1, a0, 16
+-    vst             $vr2, a3, -32
++    vld             vr3, a4, -16
++    vst             vr0, a0, 0
++    vst             vr1, a0, 16
++    vst             vr2, a3, -32
+ 
+-    vst             $vr3, a3, -16
++    vst             vr3, a3, -16
+     jr              ra
+ L(less_16bytes):
+     srli.d          t0, a2, 3
+     beqz            t0, L(less_8bytes)
+ 
+-    vldrepl.d       $vr0, a1, 0
+-    vldrepl.d       $vr1, a4, -8
+-    vstelm.d        $vr0, a0, 0, 0
+-    vstelm.d        $vr1, a3, -8, 0
++    vldrepl.d       vr0, a1, 0
++    vldrepl.d       vr1, a4, -8
++    vstelm.d        vr0, a0, 0, 0
++    vstelm.d        vr1, a3, -8, 0
+ 
+     jr              ra
+ L(less_8bytes):
+     srli.d          t0, a2, 2
+     beqz            t0, L(less_4bytes)
+-    vldrepl.w       $vr0, a1, 0
++    vldrepl.w       vr0, a1, 0
+ 
+ 
+-    vldrepl.w       $vr1, a4, -4
+-    vstelm.w        $vr0, a0, 0, 0
+-    vstelm.w        $vr1, a3, -4, 0
++    vldrepl.w       vr1, a4, -4
++    vstelm.w        vr0, a0, 0, 0
++    vstelm.w        vr1, a3, -4, 0
+     jr              ra
+ 
+ L(less_4bytes):
+     srli.d          t0, a2, 1
+     beqz            t0, L(less_2bytes)
+-    vldrepl.h       $vr0, a1, 0
+-    vldrepl.h       $vr1, a4, -2
++    vldrepl.h       vr0, a1, 0
++    vldrepl.h       vr1, a4, -2
+ 
+-    vstelm.h        $vr0, a0, 0, 0
+-    vstelm.h        $vr1, a3, -2, 0
++    vstelm.h        vr0, a0, 0, 0
++    vstelm.h        vr1, a3, -2, 0
+     jr              ra
+ L(less_2bytes):
+     beqz            a2, L(less_1bytes)
+@@ -93,10 +93,10 @@ LEAF(MEMMOVE_NAME, 6)
+     bltu            t8, a2, L(move_long)    # a2 > 64
+     bltu            t7, a2, L(more_32bytes) # a2 > 32
+ 
+-    vld             $vr0, a1, 0
+-    vld             $vr1, a4, -16
+-    vst             $vr0, a0, 0
+-    vst             $vr1, a3, -16
++    vld             vr0, a1, 0
++    vld             vr1, a4, -16
++    vst             vr0, a0, 0
++    vst             vr1, a3, -16
+ 
+     jr              ra
+     nop
+@@ -106,7 +106,7 @@ L(move_long):
+ 
+ 
+ L(copy_long):
+-    vld             $vr2, a1, 0
++    vld             vr2, a1, 0
+     andi            t0, a0, 0xf
+     sub.d           t0, t6, t0
+     add.d           a1, a1, t0
+@@ -114,10 +114,10 @@ L(copy_long):
+     sub.d           a2, a2, t0
+     andi            t1, a1, 0xf
+     bnez            t1, L(unaligned)
+-    vld             $vr0, a1, 0
++    vld             vr0, a1, 0
+ 
+     addi.d          a2, a2, -16
+-    vst             $vr2, a0, 0
++    vst             vr2, a0, 0
+     andi            t2, a2, 0x7f
+     add.d           a5, a0, t0
+ 
+@@ -128,69 +128,69 @@ L(copy_long):
+ 
+ 
+ L(al_loop):
+-    vld             $vr1, a1, 16
+-    vld             $vr2, a1, 32
+-    vld             $vr3, a1, 48
+-    vld             $vr4, a1, 64
++    vld             vr1, a1, 16
++    vld             vr2, a1, 32
++    vld             vr3, a1, 48
++    vld             vr4, a1, 64
+ 
+-    vld             $vr5, a1, 80
+-    vld             $vr6, a1, 96
+-    vld             $vr7, a1, 112
+-    vst             $vr0, a5, 0
++    vld             vr5, a1, 80
++    vld             vr6, a1, 96
++    vld             vr7, a1, 112
++    vst             vr0, a5, 0
+ 
+-    vld             $vr0, a1, 128
++    vld             vr0, a1, 128
+     addi.d          a1, a1, 128
+-    vst             $vr1, a5, 16
+-    vst             $vr2, a5, 32
++    vst             vr1, a5, 16
++    vst             vr2, a5, 32
+ 
+-    vst             $vr3, a5, 48
+-    vst             $vr4, a5, 64
+-    vst             $vr5, a5, 80
+-    vst             $vr6, a5, 96
++    vst             vr3, a5, 48
++    vst             vr4, a5, 64
++    vst             vr5, a5, 80
++    vst             vr6, a5, 96
+ 
+ 
+-    vst             $vr7, a5, 112
++    vst             vr7, a5, 112
+     addi.d          a5, a5, 128
+     bne             a1, a6, L(al_loop)
+ L(al_less_128):
+     blt             a2, t8, L(al_less_64)
+ 
+-    vld             $vr1, a1, 16
+-    vld             $vr2, a1, 32
+-    vld             $vr3, a1, 48
++    vld             vr1, a1, 16
++    vld             vr2, a1, 32
++    vld             vr3, a1, 48
+     addi.d          a2, a2, -64
+ 
+-    vst             $vr0, a5, 0
+-    vld             $vr0, a1, 64
++    vst             vr0, a5, 0
++    vld             vr0, a1, 64
+     addi.d          a1, a1, 64
+-    vst             $vr1, a5, 16
++    vst             vr1, a5, 16
+ 
+-    vst             $vr2, a5, 32
+-    vst             $vr3, a5, 48
++    vst             vr2, a5, 32
++    vst             vr3, a5, 48
+     addi.d          a5, a5, 64
+ L(al_less_64):
+     blt             a2, t7, L(al_less_32)
+ 
+ 
+-    vld             $vr1, a1, 16
++    vld             vr1, a1, 16
+     addi.d          a2, a2, -32
+-    vst             $vr0, a5, 0
+-    vld             $vr0, a1, 32
++    vst             vr0, a5, 0
++    vld             vr0, a1, 32
+ 
+     addi.d          a1, a1, 32
+-    vst             $vr1, a5, 16
++    vst             vr1, a5, 16
+     addi.d          a5, a5, 32
+ L(al_less_32):
+     blt             a2, t6, L(al_less_16)
+ 
+-    vst             $vr0, a5, 0
+-    vld             $vr0, a1, 16
++    vst             vr0, a5, 0
++    vld             vr0, a1, 16
+     addi.d          a5, a5, 16
+ L(al_less_16):
+-    vld             $vr1, a4, -16
++    vld             vr1, a4, -16
+ 
+-    vst             $vr0, a5, 0
+-    vst             $vr1, a3, -16
++    vst             vr0, a5, 0
++    vst             vr1, a3, -16
+     jr              ra
+     nop
+ 
+@@ -201,17 +201,17 @@ L(magic_num):
+ L(unaligned):
+     pcaddi          t2, -4
+     bstrins.d       a1, zero, 3, 0
+-    vld             $vr8, t2, 0
+-    vld             $vr0, a1, 0
++    vld             vr8, t2, 0
++    vld             vr0, a1, 0
+ 
+-    vld             $vr1, a1, 16
++    vld             vr1, a1, 16
+     addi.d          a2, a2, -16
+-    vst             $vr2, a0, 0
++    vst             vr2, a0, 0
+     add.d           a5, a0, t0
+ 
+-    vreplgr2vr.b    $vr9, t1
++    vreplgr2vr.b    vr9, t1
+     andi            t2, a2, 0x7f
+-    vadd.b          $vr9, $vr9, $vr8
++    vadd.b          vr9, vr9, vr8
+     addi.d          a1, a1, 32
+ 
+ 
+@@ -221,97 +221,97 @@ L(unaligned):
+     add.d           a6, a1, t3
+ 
+ L(un_loop):
+-    vld             $vr2, a1, 0
+-    vld             $vr3, a1, 16
+-    vld             $vr4, a1, 32
+-    vld             $vr5, a1, 48
++    vld             vr2, a1, 0
++    vld             vr3, a1, 16
++    vld             vr4, a1, 32
++    vld             vr5, a1, 48
+ 
+-    vld             $vr6, a1, 64
+-    vld             $vr7, a1, 80
+-    vshuf.b         $vr8, $vr1, $vr0, $vr9
+-    vld             $vr0, a1, 96
++    vld             vr6, a1, 64
++    vld             vr7, a1, 80
++    vshuf.b         vr8, vr1, vr0, vr9
++    vld             vr0, a1, 96
+ 
+-    vst             $vr8, a5, 0
+-    vshuf.b         $vr8, $vr2, $vr1, $vr9
+-    vld             $vr1, a1, 112
+-    vst             $vr8, a5, 16
++    vst             vr8, a5, 0
++    vshuf.b         vr8, vr2, vr1, vr9
++    vld             vr1, a1, 112
++    vst             vr8, a5, 16
+ 
+ 
+     addi.d          a1, a1, 128
+-    vshuf.b         $vr2, $vr3, $vr2, $vr9
+-    vshuf.b         $vr3, $vr4, $vr3, $vr9
+-    vst             $vr2, a5, 32
++    vshuf.b         vr2, vr3, vr2, vr9
++    vshuf.b         vr3, vr4, vr3, vr9
++    vst             vr2, a5, 32
+ 
+-    vshuf.b         $vr4, $vr5, $vr4, $vr9
+-    vst             $vr3, a5, 48
+-    vshuf.b         $vr5, $vr6, $vr5, $vr9
+-    vst             $vr4, a5, 64
++    vshuf.b         vr4, vr5, vr4, vr9
++    vst             vr3, a5, 48
++    vshuf.b         vr5, vr6, vr5, vr9
++    vst             vr4, a5, 64
+ 
+-    vshuf.b         $vr6, $vr7, $vr6, $vr9
+-    vst             $vr5, a5, 80
+-    vshuf.b         $vr7, $vr0, $vr7, $vr9
+-    vst             $vr6, a5, 96
++    vshuf.b         vr6, vr7, vr6, vr9
++    vst             vr5, a5, 80
++    vshuf.b         vr7, vr0, vr7, vr9
++    vst             vr6, a5, 96
+ 
+-    vst             $vr7, a5, 112
++    vst             vr7, a5, 112
+     addi.d          a5, a5, 128
+     bne             a1, a6, L(un_loop)
+ L(un_less_128):
+     blt             a2, t8, L(un_less_64)
+ 
+ 
+-    vld             $vr2, a1, 0
+-    vld             $vr3, a1, 16
+-    vshuf.b         $vr4, $vr1, $vr0, $vr9
+-    vld             $vr0, a1, 32
++    vld             vr2, a1, 0
++    vld             vr3, a1, 16
++    vshuf.b         vr4, vr1, vr0, vr9
++    vld             vr0, a1, 32
+ 
+-    vst             $vr4, a5, 0
++    vst             vr4, a5, 0
+     addi.d          a2, a2, -64
+-    vshuf.b         $vr4, $vr2, $vr1, $vr9
+-    vld             $vr1, a1, 48
++    vshuf.b         vr4, vr2, vr1, vr9
++    vld             vr1, a1, 48
+ 
+     addi.d          a1, a1, 64
+-    vst             $vr4, a5, 16
+-    vshuf.b         $vr2, $vr3, $vr2, $vr9
+-    vshuf.b         $vr3, $vr0, $vr3, $vr9
++    vst             vr4, a5, 16
++    vshuf.b         vr2, vr3, vr2, vr9
++    vshuf.b         vr3, vr0, vr3, vr9
+ 
+-    vst             $vr2, a5, 32
+-    vst             $vr3, a5, 48
++    vst             vr2, a5, 32
++    vst             vr3, a5, 48
+     addi.d          a5, a5, 64
+ L(un_less_64):
+     blt             a2, t7, L(un_less_32)
+ 
+ 
+-    vshuf.b         $vr3, $vr1, $vr0, $vr9
+-    vld             $vr0, a1, 0
+-    vst             $vr3, a5, 0
++    vshuf.b         vr3, vr1, vr0, vr9
++    vld             vr0, a1, 0
++    vst             vr3, a5, 0
+     addi.d          a2, a2, -32
+ 
+-    vshuf.b         $vr3, $vr0, $vr1, $vr9
+-    vld             $vr1, a1, 16
++    vshuf.b         vr3, vr0, vr1, vr9
++    vld             vr1, a1, 16
+     addi.d          a1, a1, 32
+-    vst             $vr3, a5, 16
++    vst             vr3, a5, 16
+ 
+     addi.d          a5, a5, 32
+ L(un_less_32):
+     blt             a2, t6, L(un_less_16)
+-    vshuf.b         $vr2, $vr1, $vr0, $vr9
+-    vor.v           $vr0, $vr1, $vr1
++    vshuf.b         vr2, vr1, vr0, vr9
++    vor.v           vr0, vr1, vr1
+ 
+-    vld             $vr1, a1, 0
+-    vst             $vr2, a5, 0
++    vld             vr1, a1, 0
++    vst             vr2, a5, 0
+     addi.d          a5, a5, 16
+ L(un_less_16):
+-    vld             $vr2, a4, -16
++    vld             vr2, a4, -16
+ 
+ 
+-    vshuf.b         $vr0, $vr1, $vr0, $vr9
+-    vst             $vr0, a5, 0
+-    vst             $vr2, a3, -16
++    vshuf.b         vr0, vr1, vr0, vr9
++    vst             vr0, a5, 0
++    vst             vr2, a3, -16
+     jr              ra
+ 
+ L(copy_back):
+     addi.d          t0, a3, -1
+-    vld             $vr2, a4, -16
++    vld             vr2, a4, -16
+     andi            t0, t0, 0xf
+     addi.d          t0, t0, 1   # in case a3 is already aligned, load 16bytes and store 16bytes
+ 
+@@ -320,9 +320,9 @@ L(copy_back):
+     andi            t1, a4, 0xf
+     bnez            t1, L(back_unaligned)
+ 
+-    vld             $vr0, a4, -16
++    vld             vr0, a4, -16
+     addi.d          a2, a2, -16
+-    vst             $vr2, a3, -16
++    vst             vr2, a3, -16
+     andi            t2, a2, 0x7f
+ 
+ 
+@@ -333,70 +333,70 @@ L(copy_back):
+ 
+     sub.d           a6, a4, t3
+ L(back_al_loop):
+-    vld             $vr1, a4, -32
+-    vld             $vr2, a4, -48
+-    vld             $vr3, a4, -64
++    vld             vr1, a4, -32
++    vld             vr2, a4, -48
++    vld             vr3, a4, -64
+ 
+-    vld             $vr4, a4, -80
+-    vld             $vr5, a4, -96
+-    vld             $vr6, a4, -112
+-    vld             $vr7, a4, -128
++    vld             vr4, a4, -80
++    vld             vr5, a4, -96
++    vld             vr6, a4, -112
++    vld             vr7, a4, -128
+ 
+-    vst             $vr0, a3, -16
+-    vld             $vr0, a4, -144
++    vst             vr0, a3, -16
++    vld             vr0, a4, -144
+     addi.d          a4, a4, -128
+-    vst             $vr1, a3, -32
++    vst             vr1, a3, -32
+ 
+ 
+-    vst             $vr2, a3, -48
+-    vst             $vr3, a3, -64
+-    vst             $vr4, a3, -80
+-    vst             $vr5, a3, -96
++    vst             vr2, a3, -48
++    vst             vr3, a3, -64
++    vst             vr4, a3, -80
++    vst             vr5, a3, -96
+ 
+-    vst             $vr6, a3, -112
+-    vst             $vr7, a3, -128
++    vst             vr6, a3, -112
++    vst             vr7, a3, -128
+     addi.d          a3, a3, -128
+     bne             a4, a6, L(back_al_loop)
+ 
+ L(back_al_less_128):
+     blt             a2, t8, L(back_al_less_64)
+-    vld             $vr1, a4, -32
+-    vld             $vr2, a4, -48
+-    vld             $vr3, a4, -64
++    vld             vr1, a4, -32
++    vld             vr2, a4, -48
++    vld             vr3, a4, -64
+ 
+     addi.d          a2, a2, -64
+-    vst             $vr0, a3, -16
+-    vld             $vr0, a4, -80
++    vst             vr0, a3, -16
++    vld             vr0, a4, -80
+     addi.d          a4, a4, -64
+ 
+ 
+-    vst             $vr1, a3, -32
+-    vst             $vr2, a3, -48
+-    vst             $vr3, a3, -64
++    vst             vr1, a3, -32
++    vst             vr2, a3, -48
++    vst             vr3, a3, -64
+     addi.d          a3, a3, -64
+ 
+ L(back_al_less_64):
+     blt             a2, t7, L(back_al_less_32)
+-    vld             $vr1, a4, -32
++    vld             vr1, a4, -32
+     addi.d          a2, a2, -32
+-    vst             $vr0, a3, -16
++    vst             vr0, a3, -16
+ 
+-    vld             $vr0, a4, -48
+-    vst             $vr1, a3, -32
++    vld             vr0, a4, -48
++    vst             vr1, a3, -32
+     addi.d          a3, a3, -32
+     addi.d          a4, a4, -32
+ 
+ L(back_al_less_32):
+     blt             a2, t6, L(back_al_less_16)
+-    vst             $vr0, a3, -16
+-    vld             $vr0, a4, -32
++    vst             vr0, a3, -16
++    vld             vr0, a4, -32
+     addi.d          a3, a3, -16
+ 
+ 
+ L(back_al_less_16):
+-    vld             $vr1, a1, 0
+-    vst             $vr0, a3, -16
+-    vst             $vr1, a0, 0
++    vld             vr1, a1, 0
++    vst             vr0, a3, -16
++    vst             vr1, a0, 0
+     jr              ra
+ 
+ L(magic_num_2):
+@@ -405,18 +405,18 @@ L(magic_num_2):
+ L(back_unaligned):
+     pcaddi          t2, -4
+     bstrins.d       a4, zero, 3, 0
+-    vld             $vr8, t2, 0
+-    vld             $vr0, a4, 0
++    vld             vr8, t2, 0
++    vld             vr0, a4, 0
+ 
+-    vld             $vr1, a4, -16
++    vld             vr1, a4, -16
+     addi.d          a2, a2, -16
+-    vst             $vr2, a3, -16
++    vst             vr2, a3, -16
+     sub.d           a3, a3, t0
+ 
+ 
+-    vreplgr2vr.b    $vr9, t1
++    vreplgr2vr.b    vr9, t1
+     andi            t2, a2, 0x7f
+-    vadd.b          $vr9, $vr9, $vr8
++    vadd.b          vr9, vr9, vr8
+     addi.d          a4, a4, -16
+ 
+     beq             t2, a2, L(back_un_less_128)
+@@ -425,92 +425,92 @@ L(back_unaligned):
+     sub.d           a6, a4, t3
+ 
+ L(back_un_loop):
+-    vld             $vr2, a4, -16
+-    vld             $vr3, a4, -32
+-    vld             $vr4, a4, -48
++    vld             vr2, a4, -16
++    vld             vr3, a4, -32
++    vld             vr4, a4, -48
+ 
+-    vld             $vr5, a4, -64
+-    vld             $vr6, a4, -80
+-    vld             $vr7, a4, -96
+-    vshuf.b         $vr8, $vr0, $vr1, $vr9
++    vld             vr5, a4, -64
++    vld             vr6, a4, -80
++    vld             vr7, a4, -96
++    vshuf.b         vr8, vr0, vr1, vr9
+ 
+ 
+-    vld             $vr0, a4, -112
+-    vst             $vr8, a3, -16
+-    vshuf.b         $vr8, $vr1, $vr2, $vr9
+-    vld             $vr1, a4, -128
++    vld             vr0, a4, -112
++    vst             vr8, a3, -16
++    vshuf.b         vr8, vr1, vr2, vr9
++    vld             vr1, a4, -128
+ 
+-    vst             $vr8, a3, -32
++    vst             vr8, a3, -32
+     addi.d          a4, a4, -128
+-    vshuf.b         $vr2, $vr2, $vr3, $vr9
+-    vshuf.b         $vr3, $vr3, $vr4, $vr9
++    vshuf.b         vr2, vr2, vr3, vr9
++    vshuf.b         vr3, vr3, vr4, vr9
+ 
+-    vst             $vr2, a3, -48
+-    vshuf.b         $vr4, $vr4, $vr5, $vr9
+-    vst             $vr3, a3, -64
+-    vshuf.b         $vr5, $vr5, $vr6, $vr9
++    vst             vr2, a3, -48
++    vshuf.b         vr4, vr4, vr5, vr9
++    vst             vr3, a3, -64
++    vshuf.b         vr5, vr5, vr6, vr9
+ 
+-    vst             $vr4, a3, -80
+-    vshuf.b         $vr6, $vr6, $vr7, $vr9
+-    vst             $vr5, a3, -96
+-    vshuf.b         $vr7, $vr7, $vr0, $vr9
++    vst             vr4, a3, -80
++    vshuf.b         vr6, vr6, vr7, vr9
++    vst             vr5, a3, -96
++    vshuf.b         vr7, vr7, vr0, vr9
+ 
+ 
+-    vst             $vr6, a3, -112
+-    vst             $vr7, a3, -128
++    vst             vr6, a3, -112
++    vst             vr7, a3, -128
+     addi.d          a3, a3, -128
+     bne             a4, a6, L(back_un_loop)
+ 
+ L(back_un_less_128):
+     blt             a2, t8, L(back_un_less_64)
+-    vld             $vr2, a4, -16
+-    vld             $vr3, a4, -32
+-    vshuf.b         $vr4, $vr0, $vr1, $vr9
++    vld             vr2, a4, -16
++    vld             vr3, a4, -32
++    vshuf.b         vr4, vr0, vr1, vr9
+ 
+-    vld             $vr0, a4, -48
+-    vst             $vr4, a3, -16
++    vld             vr0, a4, -48
++    vst             vr4, a3, -16
+     addi.d          a2, a2, -64
+-    vshuf.b         $vr4, $vr1, $vr2, $vr9
++    vshuf.b         vr4, vr1, vr2, vr9
+ 
+-    vld             $vr1, a4, -64
++    vld             vr1, a4, -64
+     addi.d          a4, a4, -64
+-    vst             $vr4, a3, -32
+-    vshuf.b         $vr2, $vr2, $vr3, $vr9
++    vst             vr4, a3, -32
++    vshuf.b         vr2, vr2, vr3, vr9
+ 
+ 
+-    vshuf.b         $vr3, $vr3, $vr0, $vr9
+-    vst             $vr2, a3, -48
+-    vst             $vr3, a3, -64
++    vshuf.b         vr3, vr3, vr0, vr9
++    vst             vr2, a3, -48
++    vst             vr3, a3, -64
+     addi.d          a3, a3, -64
+ 
+ L(back_un_less_64):
+     blt             a2, t7, L(back_un_less_32)
+-    vshuf.b         $vr3, $vr0, $vr1, $vr9
+-    vld             $vr0, a4, -16
+-    vst             $vr3, a3, -16
++    vshuf.b         vr3, vr0, vr1, vr9
++    vld             vr0, a4, -16
++    vst             vr3, a3, -16
+ 
+     addi.d          a2, a2, -32
+-    vshuf.b         $vr3, $vr1, $vr0, $vr9
+-    vld             $vr1, a4, -32
++    vshuf.b         vr3, vr1, vr0, vr9
++    vld             vr1, a4, -32
+     addi.d          a4, a4, -32
+ 
+-    vst             $vr3, a3, -32
++    vst             vr3, a3, -32
+     addi.d          a3, a3, -32
+ L(back_un_less_32):
+     blt             a2, t6, L(back_un_less_16)
+-    vshuf.b         $vr2, $vr0, $vr1, $vr9
++    vshuf.b         vr2, vr0, vr1, vr9
+ 
+ 
+-    vor.v           $vr0, $vr1, $vr1
+-    vld             $vr1, a4, -16
+-    vst             $vr2, a3, -16
++    vor.v           vr0, vr1, vr1
++    vld             vr1, a4, -16
++    vst             vr2, a3, -16
+     addi.d          a3, a3, -16
+ 
+ L(back_un_less_16):
+-    vld             $vr2, a1, 0
+-    vshuf.b         $vr0, $vr0, $vr1, $vr9
+-    vst             $vr0, a3, -16
+-    vst             $vr2, a0, 0
++    vld             vr2, a1, 0
++    vshuf.b         vr0, vr0, vr1, vr9
++    vst             vr0, a3, -16
++    vst             vr2, a0, 0
+ 
+     jr              ra
+ END(MEMMOVE_NAME)
+diff --git a/sysdeps/loongarch/lp64/multiarch/memrchr-lasx.S b/sysdeps/loongarch/lp64/multiarch/memrchr-lasx.S
+index 9ecd0257b8..415545524c 100644
+--- a/sysdeps/loongarch/lp64/multiarch/memrchr-lasx.S
++++ b/sysdeps/loongarch/lp64/multiarch/memrchr-lasx.S
+@@ -21,56 +21,56 @@ LEAF(MEMRCHR, 6)
+ 
+     bstrins.d       a3, zero, 5, 0
+     addi.d          t1, t1, 1      # len for unaligned address
+-    xvld            $xr0, a3, 0
+-    xvld            $xr1, a3, 32
++    xvld            xr0, a3, 0
++    xvld            xr1, a3, 32
+ 
+     sub.d           t2, zero, t1
+     li.d            t3, -1
+-    xvreplgr2vr.b   $xr2, a1
++    xvreplgr2vr.b   xr2, a1
+     andi            t4, a0, 0x3f
+ 
+     srl.d           t2, t3, t2
+-    xvseq.b         $xr0, $xr0, $xr2
+-    xvseq.b         $xr1, $xr1, $xr2
+-    xvmsknz.b       $xr0, $xr0
++    xvseq.b         xr0, xr0, xr2
++    xvseq.b         xr1, xr1, xr2
++    xvmsknz.b       xr0, xr0
+ 
+ 
+-    xvmsknz.b       $xr1, $xr1
+-    xvpickve.w      $xr3, $xr0, 4
+-    xvpickve.w      $xr4, $xr1, 4
+-    vilvl.h         $vr0, $vr3, $vr0
++    xvmsknz.b       xr1, xr1
++    xvpickve.w      xr3, xr0, 4
++    xvpickve.w      xr4, xr1, 4
++    vilvl.h         vr0, vr3, vr0
+ 
+-    vilvl.h         $vr1, $vr4, $vr1
+-    vilvl.w         $vr0, $vr1, $vr0
+-    movfr2gr.d      t0, $f0
++    vilvl.h         vr1, vr4, vr1
++    vilvl.w         vr0, vr1, vr0
++    movfr2gr.d      t0, fa0
+     and             t0, t0, t2
+ 
+     bltu            a2, t1, L(end)
+     bnez            t0, L(found)
+     bstrins.d       a0, zero, 5, 0
+ L(loop):
+-    xvld            $xr0, a3, -64
++    xvld            xr0, a3, -64
+ 
+-    xvld            $xr1, a3, -32
++    xvld            xr1, a3, -32
+     addi.d          a3, a3, -64
+-    xvseq.b         $xr0, $xr0, $xr2
+-    xvseq.b         $xr1, $xr1, $xr2
++    xvseq.b         xr0, xr0, xr2
++    xvseq.b         xr1, xr1, xr2
+ 
+ 
+     beq             a0, a3, L(out)
+-    xvmax.bu        $xr3, $xr0, $xr1
+-    xvseteqz.v      $fcc0, $xr3
+-    bcnez           $fcc0, L(loop)
++    xvmax.bu        xr3, xr0, xr1
++    xvseteqz.v      fcc0, xr3
++    bcnez           fcc0, L(loop)
+ 
+-    xvmsknz.b       $xr0, $xr0
+-    xvmsknz.b       $xr1, $xr1
+-    xvpickve.w      $xr3, $xr0, 4
+-    xvpickve.w      $xr4, $xr1, 4
++    xvmsknz.b       xr0, xr0
++    xvmsknz.b       xr1, xr1
++    xvpickve.w      xr3, xr0, 4
++    xvpickve.w      xr4, xr1, 4
+ 
+-    vilvl.h         $vr0, $vr3, $vr0
+-    vilvl.h         $vr1, $vr4, $vr1
+-    vilvl.w         $vr0, $vr1, $vr0
+-    movfr2gr.d      t0, $f0
++    vilvl.h         vr0, vr3, vr0
++    vilvl.h         vr1, vr4, vr1
++    vilvl.w         vr0, vr1, vr0
++    movfr2gr.d      t0, fa0
+ 
+ L(found):
+     addi.d          a0, a3, 63
+@@ -80,15 +80,15 @@ L(found):
+ 
+ 
+ L(out):
+-    xvmsknz.b       $xr0, $xr0
+-    xvmsknz.b       $xr1, $xr1
+-    xvpickve.w      $xr3, $xr0, 4
+-    xvpickve.w      $xr4, $xr1, 4
+-
+-    vilvl.h         $vr0, $vr3, $vr0
+-    vilvl.h         $vr1, $vr4, $vr1
+-    vilvl.w         $vr0, $vr1, $vr0
+-    movfr2gr.d      t0, $f0
++    xvmsknz.b       xr0, xr0
++    xvmsknz.b       xr1, xr1
++    xvpickve.w      xr3, xr0, 4
++    xvpickve.w      xr4, xr1, 4
++
++    vilvl.h         vr0, vr3, vr0
++    vilvl.h         vr1, vr4, vr1
++    vilvl.w         vr0, vr1, vr0
++    movfr2gr.d      t0, fa0
+ 
+ L(end):
+     sll.d           t2, t3, t4
+diff --git a/sysdeps/loongarch/lp64/multiarch/memrchr-lsx.S b/sysdeps/loongarch/lp64/multiarch/memrchr-lsx.S
+index 4bdc18d8cf..4a302cacc7 100644
+--- a/sysdeps/loongarch/lp64/multiarch/memrchr-lsx.S
++++ b/sysdeps/loongarch/lp64/multiarch/memrchr-lsx.S
+@@ -19,46 +19,46 @@ LEAF(MEMRCHR, 6)
+ 
+     bstrins.d       a3, zero, 4, 0
+     addi.d          t1, t1, 1      # len for unaligned address
+-    vld             $vr0, a3, 0
+-    vld             $vr1, a3, 16
++    vld             vr0, a3, 0
++    vld             vr1, a3, 16
+ 
+     sub.d           t2, zero, t1
+     li.d            t3, -1
+-    vreplgr2vr.b    $vr2, a1
++    vreplgr2vr.b    vr2, a1
+     andi            t4, a0, 0x1f
+ 
+     srl.d           t2, t3, t2
+-    vseq.b          $vr0, $vr0, $vr2
+-    vseq.b          $vr1, $vr1, $vr2
+-    vmsknz.b        $vr0, $vr0
++    vseq.b          vr0, vr0, vr2
++    vseq.b          vr1, vr1, vr2
++    vmsknz.b        vr0, vr0
+ 
+ 
+-    vmsknz.b        $vr1, $vr1
+-    vilvl.h         $vr0, $vr1, $vr0
+-    movfr2gr.s      t0, $f0
++    vmsknz.b        vr1, vr1
++    vilvl.h         vr0, vr1, vr0
++    movfr2gr.s      t0, fa0
+     and             t0, t0, t2
+ 
+     bltu            a2, t1, L(end)
+     bnez            t0, L(found)
+     bstrins.d       a0, zero, 4, 0
+ L(loop):
+-    vld             $vr0, a3, -32
++    vld             vr0, a3, -32
+ 
+-    vld             $vr1, a3, -16
++    vld             vr1, a3, -16
+     addi.d          a3, a3, -32
+-    vseq.b          $vr0, $vr0, $vr2
+-    vseq.b          $vr1, $vr1, $vr2
++    vseq.b          vr0, vr0, vr2
++    vseq.b          vr1, vr1, vr2
+ 
+     beq             a0, a3, L(out)
+-    vmax.bu         $vr3, $vr0, $vr1
+-    vseteqz.v       $fcc0, $vr3
+-    bcnez           $fcc0, L(loop)
++    vmax.bu         vr3, vr0, vr1
++    vseteqz.v       fcc0, vr3
++    bcnez           fcc0, L(loop)
+ 
+ 
+-    vmsknz.b        $vr0, $vr0
+-    vmsknz.b        $vr1, $vr1
+-    vilvl.h         $vr0, $vr1, $vr0
+-    movfr2gr.s      t0, $f0
++    vmsknz.b        vr0, vr0
++    vmsknz.b        vr1, vr1
++    vilvl.h         vr0, vr1, vr0
++    movfr2gr.s      t0, fa0
+ 
+ L(found):
+     addi.d          a0, a3, 31
+@@ -67,10 +67,10 @@ L(found):
+     jr              ra
+ 
+ L(out):
+-    vmsknz.b        $vr0, $vr0
+-    vmsknz.b        $vr1, $vr1
+-    vilvl.h         $vr0, $vr1, $vr0
+-    movfr2gr.s      t0, $f0
++    vmsknz.b        vr0, vr0
++    vmsknz.b        vr1, vr1
++    vilvl.h         vr0, vr1, vr0
++    movfr2gr.s      t0, fa0
+ 
+ L(end):
+     sll.d           t2, t3, t4
+diff --git a/sysdeps/loongarch/lp64/multiarch/memset-lasx.S b/sysdeps/loongarch/lp64/multiarch/memset-lasx.S
+index b53c0b7bd3..5e4908dcc9 100644
+--- a/sysdeps/loongarch/lp64/multiarch/memset-lasx.S
++++ b/sysdeps/loongarch/lp64/multiarch/memset-lasx.S
+@@ -14,7 +14,7 @@
+ LEAF(MEMSET, 6)
+     li.d            t1, 32
+     move            a3, a0
+-    xvreplgr2vr.b   $xr0, a1
++    xvreplgr2vr.b   xr0, a1
+     add.d           a4, a0, a2
+ 
+     bgeu            t1, a2, L(less_32bytes) # len <= 32
+@@ -24,46 +24,46 @@ LEAF(MEMSET, 6)
+ 
+ L(less_128bytes):
+     bgeu            t2, a2, L(less_64bytes) # len <= 64
+-    xvst            $xr0, a3, 0
+-    xvst            $xr0, a3, 32
+-    xvst            $xr0, a4, -32
++    xvst            xr0, a3, 0
++    xvst            xr0, a3, 32
++    xvst            xr0, a4, -32
+ 
+-    xvst            $xr0, a4, -64
++    xvst            xr0, a4, -64
+     jr              ra
+ L(less_64bytes):
+-    xvst            $xr0, a3, 0
+-    xvst            $xr0, a4, -32
++    xvst            xr0, a3, 0
++    xvst            xr0, a4, -32
+ 
+ 
+     jr              ra
+ L(less_32bytes):
+     srli.d          t0, a2, 4
+     beqz            t0, L(less_16bytes)
+-    vst             $vr0, a3, 0
++    vst             vr0, a3, 0
+ 
+-    vst             $vr0, a4, -16
++    vst             vr0, a4, -16
+     jr              ra
+ L(less_16bytes):
+     srli.d          t0, a2, 3
+     beqz            t0, L(less_8bytes)
+ 
+-    vstelm.d        $vr0, a3, 0, 0
+-    vstelm.d        $vr0, a4, -8, 0
++    vstelm.d        vr0, a3, 0, 0
++    vstelm.d        vr0, a4, -8, 0
+     jr              ra
+ L(less_8bytes):
+     srli.d          t0, a2, 2
+ 
+     beqz            t0, L(less_4bytes)
+-    vstelm.w        $vr0, a3, 0, 0
+-    vstelm.w        $vr0, a4, -4, 0
++    vstelm.w        vr0, a3, 0, 0
++    vstelm.w        vr0, a4, -4, 0
+     jr              ra
+ 
+ 
+ L(less_4bytes):
+     srli.d          t0, a2, 1
+     beqz            t0, L(less_2bytes)
+-    vstelm.h        $vr0, a3, 0, 0
+-    vstelm.h        $vr0, a4, -2, 0
++    vstelm.h        vr0, a3, 0, 0
++    vstelm.h        vr0, a4, -2, 0
+ 
+     jr              ra
+ L(less_2bytes):
+@@ -73,7 +73,7 @@ L(less_1bytes):
+     jr              ra
+ 
+ L(long_bytes):
+-    xvst            $xr0, a3, 0
++    xvst            xr0, a3, 0
+     bstrins.d       a3, zero, 4, 0
+     addi.d          a3, a3, 32
+     sub.d           a2, a4, a3
+@@ -85,15 +85,15 @@ L(long_bytes):
+ 
+ 
+ L(loop_256):
+-    xvst            $xr0, a3, 0
+-    xvst            $xr0, a3, 32
+-    xvst            $xr0, a3, 64
+-    xvst            $xr0, a3, 96
++    xvst            xr0, a3, 0
++    xvst            xr0, a3, 32
++    xvst            xr0, a3, 64
++    xvst            xr0, a3, 96
+ 
+-    xvst            $xr0, a3, 128
+-    xvst            $xr0, a3, 160
+-    xvst            $xr0, a3, 192
+-    xvst            $xr0, a3, 224
++    xvst            xr0, a3, 128
++    xvst            xr0, a3, 160
++    xvst            xr0, a3, 192
++    xvst            xr0, a3, 224
+ 
+     addi.d          a3, a3, 256
+     bne             a3, t0, L(loop_256)
+@@ -101,26 +101,26 @@ L(long_end):
+     bltu            a2, t3, L(end_less_128)
+     addi.d          a2, a2, -128
+ 
+-    xvst            $xr0, a3, 0
+-    xvst            $xr0, a3, 32
+-    xvst            $xr0, a3, 64
+-    xvst            $xr0, a3, 96
++    xvst            xr0, a3, 0
++    xvst            xr0, a3, 32
++    xvst            xr0, a3, 64
++    xvst            xr0, a3, 96
+ 
+ 
+     addi.d          a3, a3, 128
+ L(end_less_128):
+     bltu            a2, t2, L(end_less_64)
+     addi.d          a2, a2, -64
+-    xvst            $xr0, a3, 0
++    xvst            xr0, a3, 0
+ 
+-    xvst            $xr0, a3, 32
++    xvst            xr0, a3, 32
+     addi.d          a3, a3, 64
+ L(end_less_64):
+     bltu            a2, t1, L(end_less_32)
+-    xvst            $xr0, a3, 0
++    xvst            xr0, a3, 0
+ 
+ L(end_less_32):
+-    xvst            $xr0, a4, -32
++    xvst            xr0, a4, -32
+     jr              ra
+ END(MEMSET)
+ 
+diff --git a/sysdeps/loongarch/lp64/multiarch/memset-lsx.S b/sysdeps/loongarch/lp64/multiarch/memset-lsx.S
+index 7ab85283b2..67b279c8e2 100644
+--- a/sysdeps/loongarch/lp64/multiarch/memset-lsx.S
++++ b/sysdeps/loongarch/lp64/multiarch/memset-lsx.S
+@@ -14,7 +14,7 @@
+ LEAF(MEMSET, 6)
+     li.d            t1, 16
+     move            a3, a0
+-    vreplgr2vr.b    $vr0, a1
++    vreplgr2vr.b    vr0, a1
+     add.d           a4, a0, a2
+ 
+     bgeu            t1, a2, L(less_16bytes) # len <= 16
+@@ -24,48 +24,48 @@ LEAF(MEMSET, 6)
+ 
+ L(less_64bytes):
+     bgeu            t2, a2, L(less_32bytes) # len <= 32
+-    vst             $vr0, a3, 0
+-    vst             $vr0, a3, 16
+-    vst             $vr0, a4, -32
++    vst             vr0, a3, 0
++    vst             vr0, a3, 16
++    vst             vr0, a4, -32
+ 
+-    vst             $vr0, a4, -16
++    vst             vr0, a4, -16
+     jr              ra
+ L(less_32bytes):
+-    vst             $vr0, a3, 0
+-    vst             $vr0, a4, -16
++    vst             vr0, a3, 0
++    vst             vr0, a4, -16
+ 
+ 
+     jr              ra
+ L(less_16bytes):
+     srli.d          t0, a2, 3
+     beqz            t0, L(less_8bytes)
+-    vstelm.d        $vr0, a3, 0, 0
++    vstelm.d        vr0, a3, 0, 0
+ 
+-    vstelm.d        $vr0, a4, -8, 0
++    vstelm.d        vr0, a4, -8, 0
+     jr              ra
+ L(less_8bytes):
+     srli.d          t0, a2, 2
+     beqz            t0, L(less_4bytes)
+ 
+-    vstelm.w        $vr0, a3, 0, 0
+-    vstelm.w        $vr0, a4, -4, 0
++    vstelm.w        vr0, a3, 0, 0
++    vstelm.w        vr0, a4, -4, 0
+     jr              ra
+ L(less_4bytes):
+     srli.d          t0, a2, 1
+ 
+     beqz            t0, L(less_2bytes)
+-    vstelm.h        $vr0, a3, 0, 0
+-    vstelm.h        $vr0, a4, -2, 0
++    vstelm.h        vr0, a3, 0, 0
++    vstelm.h        vr0, a4, -2, 0
+     jr              ra
+ 
+ 
+ L(less_2bytes):
+     beqz            a2, L(less_1bytes)
+-    vstelm.b        $vr0, a3, 0, 0
++    vstelm.b        vr0, a3, 0, 0
+ L(less_1bytes):
+     jr              ra
+ L(long_bytes):
+-    vst             $vr0, a3, 0
++    vst             vr0, a3, 0
+ 
+     bstrins.d       a3, zero, 3, 0
+     addi.d          a3, a3, 16
+@@ -77,43 +77,43 @@ L(long_bytes):
+     sub.d           t0, a4, t0
+ 
+ L(loop_128):
+-    vst             $vr0, a3, 0
++    vst             vr0, a3, 0
+ 
+-    vst             $vr0, a3, 16
+-    vst             $vr0, a3, 32
+-    vst             $vr0, a3, 48
+-    vst             $vr0, a3, 64
++    vst             vr0, a3, 16
++    vst             vr0, a3, 32
++    vst             vr0, a3, 48
++    vst             vr0, a3, 64
+ 
+ 
+-    vst             $vr0, a3, 80
+-    vst             $vr0, a3, 96
+-    vst             $vr0, a3, 112
++    vst             vr0, a3, 80
++    vst             vr0, a3, 96
++    vst             vr0, a3, 112
+     addi.d          a3, a3, 128
+ 
+     bne             a3, t0, L(loop_128)
+ L(long_end):
+     bltu            a2, t3, L(end_less_64)
+     addi.d          a2, a2, -64
+-    vst             $vr0, a3, 0
++    vst             vr0, a3, 0
+ 
+-    vst             $vr0, a3, 16
+-    vst             $vr0, a3, 32
+-    vst             $vr0, a3, 48
++    vst             vr0, a3, 16
++    vst             vr0, a3, 32
++    vst             vr0, a3, 48
+     addi.d          a3, a3, 64
+ 
+ L(end_less_64):
+     bltu            a2, t2, L(end_less_32)
+     addi.d          a2, a2, -32
+-    vst             $vr0, a3, 0
+-    vst             $vr0, a3, 16
++    vst             vr0, a3, 0
++    vst             vr0, a3, 16
+ 
+     addi.d          a3, a3, 32
+ L(end_less_32):
+     bltu            a2, t1, L(end_less_16)
+-    vst             $vr0, a3, 0
++    vst             vr0, a3, 0
+ 
+ L(end_less_16):
+-    vst             $vr0, a4, -16
++    vst             vr0, a4, -16
+     jr              ra
+ END(MEMSET)
+ 
+diff --git a/sysdeps/loongarch/lp64/multiarch/rawmemchr-lasx.S b/sysdeps/loongarch/lp64/multiarch/rawmemchr-lasx.S
+index 1e94aa5042..856f99cef0 100644
+--- a/sysdeps/loongarch/lp64/multiarch/rawmemchr-lasx.S
++++ b/sysdeps/loongarch/lp64/multiarch/rawmemchr-lasx.S
+@@ -8,15 +8,15 @@
+ LEAF(RAWMEMCHR, 6)
+     move            a2, a0
+     bstrins.d       a0, zero, 4, 0
+-    xvld            $xr0, a0, 0
+-    xvreplgr2vr.b   $xr1, a1
++    xvld            xr0, a0, 0
++    xvreplgr2vr.b   xr1, a1
+ 
+-    xvseq.b         $xr0, $xr0, $xr1
+-    xvmsknz.b       $xr0, $xr0
+-    xvpickve.w      $xr2, $xr0, 4
+-    vilvl.h         $vr0, $vr2, $vr0
++    xvseq.b         xr0, xr0, xr1
++    xvmsknz.b       xr0, xr0
++    xvpickve.w      xr2, xr0, 4
++    vilvl.h         vr0, vr2, vr0
+ 
+-    movfr2gr.s      t0, $f0
++    movfr2gr.s      t0, fa0
+     sra.w           t0, t0, a2
+     beqz            t0, L(loop)
+     ctz.w           t0, t0
+@@ -27,17 +27,17 @@ LEAF(RAWMEMCHR, 6)
+     nop
+ 
+ L(loop):
+-    xvld            $xr0, a0, 32
++    xvld            xr0, a0, 32
+     addi.d          a0, a0, 32
+-    xvseq.b         $xr0, $xr0, $xr1
+-    xvseteqz.v      $fcc0, $xr0
++    xvseq.b         xr0, xr0, xr1
++    xvseteqz.v      fcc0, xr0
+ 
+-    bcnez           $fcc0, L(loop)
+-    xvmsknz.b       $xr0, $xr0
+-    xvpickve.w      $xr1, $xr0, 4
+-    vilvl.h         $vr0, $vr1, $vr0
++    bcnez           fcc0, L(loop)
++    xvmsknz.b       xr0, xr0
++    xvpickve.w      xr1, xr0, 4
++    vilvl.h         vr0, vr1, vr0
+ 
+-    movfr2gr.s      t0, $f0
++    movfr2gr.s      t0, fa0
+     ctz.w           t0, t0
+     add.d           a0, a0, t0
+     jr              ra
+diff --git a/sysdeps/loongarch/lp64/multiarch/rawmemchr-lsx.S b/sysdeps/loongarch/lp64/multiarch/rawmemchr-lsx.S
+index 40bf0cda28..7e864e96c7 100644
+--- a/sysdeps/loongarch/lp64/multiarch/rawmemchr-lsx.S
++++ b/sysdeps/loongarch/lp64/multiarch/rawmemchr-lsx.S
+@@ -14,17 +14,17 @@
+ LEAF(RAWMEMCHR, 6)
+     move            a2, a0
+     bstrins.d       a0, zero, 4, 0
+-    vld             $vr0, a0, 0
+-    vld             $vr1, a0, 16
++    vld             vr0, a0, 0
++    vld             vr1, a0, 16
+ 
+-    vreplgr2vr.b    $vr2, a1
+-    vseq.b          $vr0, $vr0, $vr2
+-    vseq.b          $vr1, $vr1, $vr2
+-    vmsknz.b        $vr0, $vr0
++    vreplgr2vr.b    vr2, a1
++    vseq.b          vr0, vr0, vr2
++    vseq.b          vr1, vr1, vr2
++    vmsknz.b        vr0, vr0
+ 
+-    vmsknz.b        $vr1, $vr1
+-    vilvl.h         $vr0, $vr1, $vr0
+-    movfr2gr.s      t0, $f0
++    vmsknz.b        vr1, vr1
++    vilvl.h         vr0, vr1, vr0
++    movfr2gr.s      t0, fa0
+     sra.w           t0, t0, a2
+ 
+     beqz            t0, L(loop)
+@@ -34,15 +34,15 @@ LEAF(RAWMEMCHR, 6)
+ 
+ 
+ L(loop):
+-    vld             $vr0, a0, 32
++    vld             vr0, a0, 32
+     addi.d          a0, a0, 16
+-    vseq.b          $vr0, $vr0, $vr2
+-    vseteqz.v       $fcc0, $vr0
++    vseq.b          vr0, vr0, vr2
++    vseteqz.v       fcc0, vr0
+ 
+-    bcnez           $fcc0, L(loop)
++    bcnez           fcc0, L(loop)
+     addi.d          a0, a0, 16
+-    vfrstpi.b       $vr0, $vr0, 0
+-    vpickve2gr.bu   t0, $vr0, 0
++    vfrstpi.b       vr0, vr0, 0
++    vpickve2gr.bu   t0, vr0, 0
+ 
+     add.d           a0, a0, t0
+     jr              ra
+diff --git a/sysdeps/loongarch/lp64/multiarch/stpcpy-lsx.S b/sysdeps/loongarch/lp64/multiarch/stpcpy-lsx.S
+index 0836f59055..53832de78e 100644
+--- a/sysdeps/loongarch/lp64/multiarch/stpcpy-lsx.S
++++ b/sysdeps/loongarch/lp64/multiarch/stpcpy-lsx.S
+@@ -18,67 +18,67 @@ L(magic_num):
+ ENTRY_NO_ALIGN(STPCPY)
+     pcaddi          t0, -4
+     andi            a4, a1, 0xf
+-    vld             $vr1, t0, 0
++    vld             vr1, t0, 0
+     beqz            a4, L(load_start)
+ 
+     xor             t0, a1, a4
+-    vld             $vr0, t0, 0
+-    vreplgr2vr.b    $vr2, a4
+-    vadd.b          $vr2, $vr2, $vr1
++    vld             vr0, t0, 0
++    vreplgr2vr.b    vr2, a4
++    vadd.b          vr2, vr2, vr1
+ 
+-    vshuf.b         $vr0, $vr2, $vr0, $vr2
+-    vsetanyeqz.b    $fcc0, $vr0
+-    bcnez           $fcc0, L(end)
++    vshuf.b         vr0, vr2, vr0, vr2
++    vsetanyeqz.b    fcc0, vr0
++    bcnez           fcc0, L(end)
+ L(load_start):
+-    vld             $vr0, a1, 0
++    vld             vr0, a1, 0
+ 
+ 
+     li.d            t1, 16
+     andi            a3, a0, 0xf
+-    vsetanyeqz.b    $fcc0, $vr0
++    vsetanyeqz.b    fcc0, vr0
+     sub.d           t0, t1, a3
+ 
+-    bcnez           $fcc0, L(end)
++    bcnez           fcc0, L(end)
+     add.d           a1, a1, t0
+-    vst             $vr0, a0, 0
++    vst             vr0, a0, 0
+     add.d           a0, a0, t0
+ 
+     bne             a3, a4, L(unaligned)
+-    vld             $vr0, a1, 0
+-    vsetanyeqz.b    $fcc0, $vr0
+-    bcnez           $fcc0, L(end)
++    vld             vr0, a1, 0
++    vsetanyeqz.b    fcc0, vr0
++    bcnez           fcc0, L(end)
+ 
+ L(loop):
+-    vst             $vr0, a0, 0
+-    vld             $vr0, a1, 16
++    vst             vr0, a0, 0
++    vld             vr0, a1, 16
+     addi.d          a0, a0, 16
+     addi.d          a1, a1, 16
+ 
+ 
+-    vsetanyeqz.b    $fcc0, $vr0
+-    bceqz           $fcc0, L(loop)
+-    vmsknz.b        $vr1, $vr0
+-    movfr2gr.s      t0, $f1
++    vsetanyeqz.b    fcc0, vr0
++    bceqz           fcc0, L(loop)
++    vmsknz.b        vr1, vr0
++    movfr2gr.s      t0, fa1
+ 
+     cto.w           t0, t0
+     add.d           a1, a1, t0
+-    vld             $vr0, a1, -15
++    vld             vr0, a1, -15
+     add.d           a0, a0, t0
+ 
+-    vst             $vr0, a0, -15
++    vst             vr0, a0, -15
+     jr              ra
+ L(end):
+-    vseqi.b         $vr1, $vr0, 0
+-    vfrstpi.b       $vr1, $vr1, 0
++    vseqi.b         vr1, vr0, 0
++    vfrstpi.b       vr1, vr1, 0
+ 
+-    vpickve2gr.bu   t0, $vr1, 0
++    vpickve2gr.bu   t0, vr1, 0
+     addi.d          t0, t0, 1
+ L(end_16):
+     andi            t1, t0, 16
+     beqz            t1, L(end_8)
+ 
+ 
+-    vst             $vr0, a0, 0
++    vst             vr0, a0, 0
+     addi.d          a0, a0, 15
+     jr              ra
+ L(end_8):
+@@ -89,26 +89,26 @@ L(end_8):
+     andi            t5, t0, 1
+     beqz            t2, L(end_4)
+ 
+-    vstelm.d        $vr0, a0, 0, 0
++    vstelm.d        vr0, a0, 0, 0
+     addi.d          a0, a0, 8
+-    vbsrl.v         $vr0, $vr0, 8
++    vbsrl.v         vr0, vr0, 8
+ L(end_4):
+     beqz            t3, L(end_2)
+ 
+-    vstelm.w        $vr0, a0, 0, 0
++    vstelm.w        vr0, a0, 0, 0
+     addi.d          a0, a0, 4
+-    vbsrl.v         $vr0, $vr0, 4
++    vbsrl.v         vr0, vr0, 4
+ L(end_2):
+     beqz            t4, L(end_1)
+ 
+ 
+-    vstelm.h        $vr0, a0, 0, 0
++    vstelm.h        vr0, a0, 0, 0
+     addi.d          a0, a0, 2
+-    vbsrl.v         $vr0, $vr0, 2
++    vbsrl.v         vr0, vr0, 2
+ L(end_1):
+     beqz            t5, L(out)
+ 
+-    vstelm.b        $vr0, a0, 0, 0
++    vstelm.b        vr0, a0, 0, 0
+     addi.d          a0, a0, 1
+ L(out):
+     addi.d          a0, a0, -1
+@@ -120,49 +120,49 @@ L(unaligned):
+     andi           a3, a1, 0xf
+     bstrins.d      a1, zero, 3, 0
+ 
+-    vld            $vr2, a1, 0
+-    vreplgr2vr.b   $vr3, a3
+-    vslt.b         $vr4, $vr1, $vr3
+-    vor.v          $vr0, $vr2, $vr4
++    vld            vr2, a1, 0
++    vreplgr2vr.b   vr3, a3
++    vslt.b         vr4, vr1, vr3
++    vor.v          vr0, vr2, vr4
+ 
+ 
+-    vsetanyeqz.b   $fcc0, $vr0
+-    bcnez          $fcc0, L(un_first_end)
+-    vld            $vr0, a1, 16
+-    vadd.b         $vr3, $vr3, $vr1
++    vsetanyeqz.b   fcc0, vr0
++    bcnez          fcc0, L(un_first_end)
++    vld            vr0, a1, 16
++    vadd.b         vr3, vr3, vr1
+ 
+     addi.d         a1, a1, 16
+-    vshuf.b        $vr4, $vr0, $vr2, $vr3
+-    vsetanyeqz.b   $fcc0, $vr0
+-    bcnez          $fcc0, L(un_end)
++    vshuf.b        vr4, vr0, vr2, vr3
++    vsetanyeqz.b   fcc0, vr0
++    bcnez          fcc0, L(un_end)
+ 
+ L(un_loop):
+-    vor.v          $vr2, $vr0, $vr0
+-    vld            $vr0, a1, 16
+-    vst            $vr4, a0, 0
++    vor.v          vr2, vr0, vr0
++    vld            vr0, a1, 16
++    vst            vr4, a0, 0
+     addi.d         a1, a1, 16
+ 
+     addi.d         a0, a0, 16
+-    vshuf.b        $vr4, $vr0, $vr2, $vr3
+-    vsetanyeqz.b   $fcc0, $vr0
+-    bceqz          $fcc0, L(un_loop)
++    vshuf.b        vr4, vr0, vr2, vr3
++    vsetanyeqz.b   fcc0, vr0
++    bceqz          fcc0, L(un_loop)
+ 
+ 
+ L(un_end):
+-    vsetanyeqz.b    $fcc0, $vr4
+-    bcnez           $fcc0, 1f
+-    vst             $vr4, a0, 0
++    vsetanyeqz.b    fcc0, vr4
++    bcnez           fcc0, 1f
++    vst             vr4, a0, 0
+ 1:
+-    vmsknz.b        $vr1, $vr0
++    vmsknz.b        vr1, vr0
+ 
+-    movfr2gr.s      t0, $f1
++    movfr2gr.s      t0, fa1
+     cto.w           t0, t0
+     add.d           a1, a1, t0
+-    vld             $vr0, a1, -15
++    vld             vr0, a1, -15
+ 
+     add.d           a0, a0, t0
+     sub.d           a0, a0, a3
+-    vst             $vr0, a0, 1
++    vst             vr0, a0, 1
+     addi.d          a0, a0, 16
+ 
+     jr              ra
+diff --git a/sysdeps/loongarch/lp64/multiarch/strchr-lasx.S b/sysdeps/loongarch/lp64/multiarch/strchr-lasx.S
+index 3f6ad91506..fab6edc7b7 100644
+--- a/sysdeps/loongarch/lp64/multiarch/strchr-lasx.S
++++ b/sysdeps/loongarch/lp64/multiarch/strchr-lasx.S
+@@ -16,18 +16,18 @@
+ LEAF(STRCHR, 6)
+     andi            t1, a0, 0x1f
+     bstrins.d       a0, zero, 4, 0
+-    xvld            $xr0, a0, 0
++    xvld            xr0, a0, 0
+     li.d            t2, -1
+ 
+-    xvreplgr2vr.b   $xr1, a1
++    xvreplgr2vr.b   xr1, a1
+     sll.d           t1, t2, t1
+-    xvxor.v         $xr2, $xr0, $xr1
+-    xvmin.bu        $xr0, $xr0, $xr2
++    xvxor.v         xr2, xr0, xr1
++    xvmin.bu        xr0, xr0, xr2
+ 
+-    xvmsknz.b       $xr0, $xr0
+-    xvpickve.w      $xr3, $xr0, 4
+-    vilvl.h         $vr0, $vr3, $vr0
+-    movfr2gr.s      t0, $f0
++    xvmsknz.b       xr0, xr0
++    xvpickve.w      xr3, xr0, 4
++    vilvl.h         vr0, vr3, vr0
++    movfr2gr.s      t0, fa0
+ 
+     orn             t0, t0, t1
+     bne             t0, t2, L(end)
+@@ -36,37 +36,37 @@ LEAF(STRCHR, 6)
+ 
+ 
+ L(loop):
+-    xvld            $xr0, a0, 0
+-    xvxor.v         $xr2, $xr0, $xr1
+-    xvmin.bu        $xr0, $xr0, $xr2
+-    xvsetanyeqz.b   $fcc0, $xr0
++    xvld            xr0, a0, 0
++    xvxor.v         xr2, xr0, xr1
++    xvmin.bu        xr0, xr0, xr2
++    xvsetanyeqz.b   fcc0, xr0
+ 
+-    bcnez           $fcc0, L(loop_end)
+-    xvld            $xr0, a0, 32
++    bcnez           fcc0, L(loop_end)
++    xvld            xr0, a0, 32
+     addi.d          a0, a0, 64
+-    xvxor.v         $xr2, $xr0, $xr1
++    xvxor.v         xr2, xr0, xr1
+ 
+-    xvmin.bu        $xr0, $xr0, $xr2
+-    xvsetanyeqz.b   $fcc0, $xr0
+-    bceqz           $fcc0, L(loop)
++    xvmin.bu        xr0, xr0, xr2
++    xvsetanyeqz.b   fcc0, xr0
++    bceqz           fcc0, L(loop)
+     addi.d          a0, a0, -32
+ 
+ L(loop_end):
+-    xvmsknz.b       $xr0, $xr0
+-    xvpickve.w      $xr1, $xr0, 4
+-    vilvl.h         $vr0, $vr1, $vr0
+-    movfr2gr.s      t0, $f0
++    xvmsknz.b       xr0, xr0
++    xvpickve.w      xr1, xr0, 4
++    vilvl.h         vr0, vr1, vr0
++    movfr2gr.s      t0, fa0
+ 
+ 
+ L(end):
+     cto.w           t0, t0
+     add.d           a0, a0, t0
+ #ifndef AS_STRCHRNUL
+-    vreplgr2vr.b    $vr0, t0
+-    xvpermi.q       $xr3, $xr2, 1
++    vreplgr2vr.b    vr0, t0
++    xvpermi.q       xr3, xr2, 1
+ 
+-    vshuf.b         $vr0, $vr3, $vr2, $vr0
+-    vpickve2gr.bu   t0, $vr0, 0
++    vshuf.b         vr0, vr3, vr2, vr0
++    vpickve2gr.bu   t0, vr0, 0
+     masknez         a0, a0, t0
+ #endif
+     jr              ra
+diff --git a/sysdeps/loongarch/lp64/multiarch/strchr-lsx.S b/sysdeps/loongarch/lp64/multiarch/strchr-lsx.S
+index 4ad9a4ad78..ebeb332ed5 100644
+--- a/sysdeps/loongarch/lp64/multiarch/strchr-lsx.S
++++ b/sysdeps/loongarch/lp64/multiarch/strchr-lsx.S
+@@ -16,16 +16,16 @@
+ LEAF(STRCHR, 6)
+     andi            t1, a0, 0xf
+     bstrins.d       a0, zero, 3, 0
+-    vld             $vr0, a0, 0
++    vld             vr0, a0, 0
+     li.d            t2, -1
+ 
+-    vreplgr2vr.b    $vr1, a1
++    vreplgr2vr.b    vr1, a1
+     sll.d           t3, t2, t1
+-    vxor.v          $vr2, $vr0, $vr1
+-    vmin.bu         $vr0, $vr0, $vr2
++    vxor.v          vr2, vr0, vr1
++    vmin.bu         vr0, vr0, vr2
+ 
+-    vmsknz.b        $vr0, $vr0
+-    movfr2gr.s      t0, $f0
++    vmsknz.b        vr0, vr0
++    movfr2gr.s      t0, fa0
+     ext.w.h         t0, t0
+     orn             t0, t0, t3
+ 
+@@ -34,23 +34,23 @@ L(found):
+     cto.w           t0, t0
+     add.d           a0, a0, t0
+ #ifndef AS_STRCHRNUL
+-    vreplve.b       $vr2, $vr2, t0
+-    vpickve2gr.bu   t1, $vr2, 0
++    vreplve.b       vr2, vr2, t0
++    vpickve2gr.bu   t1, vr2, 0
+     masknez         a0, a0, t1
+ #endif
+     jr              ra
+ 
+ 
+ L(loop):
+-    vld             $vr0, a0, 16
++    vld             vr0, a0, 16
+     addi.d          a0, a0, 16
+-    vxor.v          $vr2, $vr0, $vr1
+-    vmin.bu         $vr0, $vr0, $vr2
++    vxor.v          vr2, vr0, vr1
++    vmin.bu         vr0, vr0, vr2
+ 
+-    vsetanyeqz.b    $fcc0, $vr0
+-    bceqz           $fcc0, L(loop)
+-    vmsknz.b        $vr0, $vr0
+-    movfr2gr.s      t0, $f0
++    vsetanyeqz.b    fcc0, vr0
++    bceqz           fcc0, L(loop)
++    vmsknz.b        vr0, vr0
++    movfr2gr.s      t0, fa0
+ 
+     b               L(found)
+ END(STRCHR)
+diff --git a/sysdeps/loongarch/lp64/multiarch/strcmp-lsx.S b/sysdeps/loongarch/lp64/multiarch/strcmp-lsx.S
+index c86e3ecd55..c6e1110c8e 100644
+--- a/sysdeps/loongarch/lp64/multiarch/strcmp-lsx.S
++++ b/sysdeps/loongarch/lp64/multiarch/strcmp-lsx.S
+@@ -20,45 +20,45 @@ L(magic_num):
+ ENTRY_NO_ALIGN(STRCMP)
+     pcaddi          t0, -4
+     andi            a2, a0, 0xf
+-    vld             $vr2, t0, 0
++    vld             vr2, t0, 0
+     andi            a3, a1, 0xf
+ 
+     bne             a2, a3, L(unaligned)
+     bstrins.d       a0, zero, 3, 0
+     bstrins.d       a1, zero, 3, 0
+-    vld             $vr0, a0, 0
++    vld             vr0, a0, 0
+ 
+-    vld             $vr1, a1, 0
+-    vreplgr2vr.b    $vr3, a2
+-    vslt.b          $vr2, $vr2, $vr3
+-    vseq.b          $vr3, $vr0, $vr1
++    vld             vr1, a1, 0
++    vreplgr2vr.b    vr3, a2
++    vslt.b          vr2, vr2, vr3
++    vseq.b          vr3, vr0, vr1
+ 
+ 
+-    vmin.bu         $vr3, $vr0, $vr3
+-    vor.v           $vr3, $vr3, $vr2
+-    vsetanyeqz.b    $fcc0, $vr3
+-    bcnez           $fcc0, L(al_out)
++    vmin.bu         vr3, vr0, vr3
++    vor.v           vr3, vr3, vr2
++    vsetanyeqz.b    fcc0, vr3
++    bcnez           fcc0, L(al_out)
+ 
+ L(al_loop):
+-    vld             $vr0, a0, 16
+-    vld             $vr1, a1, 16
++    vld             vr0, a0, 16
++    vld             vr1, a1, 16
+     addi.d          a0, a0, 16
+     addi.d          a1, a1, 16
+ 
+-    vseq.b          $vr3, $vr0, $vr1
+-    vmin.bu         $vr3, $vr0, $vr3
+-    vsetanyeqz.b    $fcc0, $vr3
+-    bceqz           $fcc0, L(al_loop)
++    vseq.b          vr3, vr0, vr1
++    vmin.bu         vr3, vr0, vr3
++    vsetanyeqz.b    fcc0, vr3
++    bceqz           fcc0, L(al_loop)
+ 
+ L(al_out):
+-    vseqi.b         $vr3, $vr3, 0
+-    vfrstpi.b       $vr3, $vr3, 0
+-    vshuf.b         $vr0, $vr0, $vr0, $vr3
+-    vshuf.b         $vr1, $vr1, $vr1, $vr3
++    vseqi.b         vr3, vr3, 0
++    vfrstpi.b       vr3, vr3, 0
++    vshuf.b         vr0, vr0, vr0, vr3
++    vshuf.b         vr1, vr1, vr1, vr3
+ 
+ 
+-    vpickve2gr.bu   t0, $vr0, 0
+-    vpickve2gr.bu   t1, $vr1, 0
++    vpickve2gr.bu   t0, vr0, 0
++    vpickve2gr.bu   t1, vr1, 0
+     sub.d           a0, t0, t1
+     jr              ra
+ 
+@@ -79,52 +79,52 @@ L(unaligned):
+     bstrins.d       a1, zero, 3, 0
+ 
+ 
+-    vld             $vr0, a0, 0
+-    vld             $vr3, a1, 0
+-    vreplgr2vr.b    $vr4, a2
+-    vreplgr2vr.b    $vr5, a3
++    vld             vr0, a0, 0
++    vld             vr3, a1, 0
++    vreplgr2vr.b    vr4, a2
++    vreplgr2vr.b    vr5, a3
+ 
+-    vslt.b          $vr7, $vr2, $vr4
+-    vsub.b          $vr4, $vr4, $vr5
+-    vaddi.bu        $vr6, $vr2, 16
+-    vsub.b          $vr6, $vr6, $vr4
++    vslt.b          vr7, vr2, vr4
++    vsub.b          vr4, vr4, vr5
++    vaddi.bu        vr6, vr2, 16
++    vsub.b          vr6, vr6, vr4
+ 
+-    vshuf.b         $vr1, $vr3, $vr3, $vr6
+-    vseq.b          $vr4, $vr0, $vr1
+-    vmin.bu         $vr4, $vr0, $vr4
+-    vor.v           $vr4, $vr4, $vr7
++    vshuf.b         vr1, vr3, vr3, vr6
++    vseq.b          vr4, vr0, vr1
++    vmin.bu         vr4, vr0, vr4
++    vor.v           vr4, vr4, vr7
+ 
+-    vsetanyeqz.b    $fcc0, $vr4
+-    bcnez           $fcc0, L(un_end)
+-    vslt.b          $vr5, $vr2, $vr5
+-    vor.v           $vr3, $vr3, $vr5
++    vsetanyeqz.b    fcc0, vr4
++    bcnez           fcc0, L(un_end)
++    vslt.b          vr5, vr2, vr5
++    vor.v           vr3, vr3, vr5
+ 
+ 
+ L(un_loop):
+-    vld             $vr0, a0, 16
+-    vsetanyeqz.b    $fcc0, $vr3
+-    bcnez           $fcc0, L(remaining_end)
+-    vor.v           $vr1, $vr3, $vr3
++    vld             vr0, a0, 16
++    vsetanyeqz.b    fcc0, vr3
++    bcnez           fcc0, L(remaining_end)
++    vor.v           vr1, vr3, vr3
+ 
+-    vld             $vr3, a1, 16
++    vld             vr3, a1, 16
+     addi.d          a0, a0, 16
+     addi.d          a1, a1, 16
+-    vshuf.b         $vr1, $vr3, $vr1, $vr6
++    vshuf.b         vr1, vr3, vr1, vr6
+ 
+-    vseq.b          $vr4, $vr0, $vr1
+-    vmin.bu         $vr4, $vr0, $vr4
+-    vsetanyeqz.b    $fcc0, $vr4
+-    bceqz           $fcc0, L(un_loop)
++    vseq.b          vr4, vr0, vr1
++    vmin.bu         vr4, vr0, vr4
++    vsetanyeqz.b    fcc0, vr4
++    bceqz           fcc0, L(un_loop)
+ 
+ L(un_end):
+-    vseqi.b         $vr4, $vr4, 0
+-    vfrstpi.b       $vr4, $vr4, 0
+-    vshuf.b         $vr0, $vr0, $vr0, $vr4
+-    vshuf.b         $vr1, $vr1, $vr1, $vr4
++    vseqi.b         vr4, vr4, 0
++    vfrstpi.b       vr4, vr4, 0
++    vshuf.b         vr0, vr0, vr0, vr4
++    vshuf.b         vr1, vr1, vr1, vr4
+ 
+ 
+-    vpickve2gr.bu   t0, $vr0, 0
+-    vpickve2gr.bu   t1, $vr1, 0
++    vpickve2gr.bu   t0, vr0, 0
++    vpickve2gr.bu   t1, vr1, 0
+     sub.d           t3, t0, t1
+     sub.d           t4, t1, t0
+ 
+@@ -134,9 +134,9 @@ L(un_end):
+     jr              ra
+ 
+ L(remaining_end):
+-    vshuf.b         $vr1, $vr3, $vr3, $vr6
+-    vseq.b          $vr4, $vr0, $vr1
+-    vmin.bu         $vr4, $vr4, $vr0
++    vshuf.b         vr1, vr3, vr3, vr6
++    vseq.b          vr4, vr0, vr1
++    vmin.bu         vr4, vr4, vr0
+     b               L(un_end)
+ END(STRCMP)
+ 
+diff --git a/sysdeps/loongarch/lp64/multiarch/strcpy-lsx.S b/sysdeps/loongarch/lp64/multiarch/strcpy-lsx.S
+index dbc061adfb..52d77fa369 100644
+--- a/sysdeps/loongarch/lp64/multiarch/strcpy-lsx.S
++++ b/sysdeps/loongarch/lp64/multiarch/strcpy-lsx.S
+@@ -21,61 +21,61 @@ L(magic_num):
+ ENTRY_NO_ALIGN(STRCPY)
+     pcaddi          t0, -4
+     andi            a4, a1, 0xf
+-    vld             $vr1, t0, 0
++    vld             vr1, t0, 0
+     move            a2, a0
+ 
+     beqz            a4, L(load_start)
+     xor             t0, a1, a4
+-    vld             $vr0, t0, 0
+-    vreplgr2vr.b    $vr2, a4
++    vld             vr0, t0, 0
++    vreplgr2vr.b    vr2, a4
+ 
+-    vadd.b          $vr2, $vr2, $vr1
+-    vshuf.b         $vr0, $vr2, $vr0, $vr2
+-    vsetanyeqz.b    $fcc0, $vr0
+-    bcnez           $fcc0, L(end)
++    vadd.b          vr2, vr2, vr1
++    vshuf.b         vr0, vr2, vr0, vr2
++    vsetanyeqz.b    fcc0, vr0
++    bcnez           fcc0, L(end)
+ 
+ 
+ L(load_start):
+-    vld             $vr0, a1, 0
++    vld             vr0, a1, 0
+     li.d            t1, 16
+     andi            a3, a2, 0xf
+-    vsetanyeqz.b    $fcc0, $vr0
++    vsetanyeqz.b    fcc0, vr0
+ 
+     sub.d           t0, t1, a3
+-    bcnez           $fcc0, L(end)
++    bcnez           fcc0, L(end)
+     add.d           a1, a1, t0
+-    vst             $vr0, a2, 0
++    vst             vr0, a2, 0
+ 
+     andi            a3, a1, 0xf
+     add.d           a2, a2, t0
+     bnez            a3, L(unaligned)
+-    vld             $vr0, a1, 0
++    vld             vr0, a1, 0
+ 
+-    vsetanyeqz.b    $fcc0, $vr0
+-    bcnez           $fcc0, L(end)
++    vsetanyeqz.b    fcc0, vr0
++    bcnez           fcc0, L(end)
+ L(loop):
+-    vst             $vr0, a2, 0
+-    vld             $vr0, a1, 16
++    vst             vr0, a2, 0
++    vld             vr0, a1, 16
+ 
+ 
+     addi.d          a2, a2, 16
+     addi.d          a1, a1, 16
+-    vsetanyeqz.b    $fcc0, $vr0
+-    bceqz           $fcc0, L(loop)
++    vsetanyeqz.b    fcc0, vr0
++    bceqz           fcc0, L(loop)
+ 
+-    vmsknz.b        $vr1, $vr0
+-    movfr2gr.s      t0, $f1
++    vmsknz.b        vr1, vr0
++    movfr2gr.s      t0, fa1
+     cto.w           t0, t0
+     add.d           a1, a1, t0
+ 
+-    vld             $vr0, a1, -15
++    vld             vr0, a1, -15
+     add.d           a2, a2, t0
+-    vst             $vr0, a2, -15
++    vst             vr0, a2, -15
+     jr              ra
+ 
+ L(end):
+-    vmsknz.b        $vr1, $vr0
+-    movfr2gr.s      t0, $f1
++    vmsknz.b        vr1, vr0
++    movfr2gr.s      t0, fa1
+     cto.w           t0, t0
+     addi.d          t0, t0, 1
+ 
+@@ -83,7 +83,7 @@ L(end):
+ L(end_16):
+     andi            t1, t0, 16
+     beqz            t1, L(end_8)
+-    vst             $vr0, a2, 0
++    vst             vr0, a2, 0
+     jr              ra
+ 
+ L(end_8):
+@@ -93,74 +93,74 @@ L(end_8):
+     andi            t5, t0, 1
+ 
+     beqz            t2, L(end_4)
+-    vstelm.d        $vr0, a2, 0, 0
++    vstelm.d        vr0, a2, 0, 0
+     addi.d          a2, a2, 8
+-    vbsrl.v         $vr0, $vr0, 8
++    vbsrl.v         vr0, vr0, 8
+ 
+ L(end_4):
+     beqz            t3, L(end_2)
+-    vstelm.w        $vr0, a2, 0, 0
++    vstelm.w        vr0, a2, 0, 0
+     addi.d          a2, a2, 4
+-    vbsrl.v         $vr0, $vr0, 4
++    vbsrl.v         vr0, vr0, 4
+ 
+ 
+ L(end_2):
+     beqz            t4, L(end_1)
+-    vstelm.h        $vr0, a2, 0, 0
++    vstelm.h        vr0, a2, 0, 0
+     addi.d          a2, a2, 2
+-    vbsrl.v         $vr0, $vr0, 2
++    vbsrl.v         vr0, vr0, 2
+ 
+ L(end_1):
+     beqz            t5, L(out)
+-    vstelm.b        $vr0, a2, 0, 0
++    vstelm.b        vr0, a2, 0, 0
+ L(out):
+     jr              ra
+ L(unaligned):
+     bstrins.d      a1, zero, 3, 0
+ 
+-    vld            $vr2, a1, 0
+-    vreplgr2vr.b   $vr3, a3
+-    vslt.b         $vr4, $vr1, $vr3
+-    vor.v          $vr0, $vr2, $vr4
++    vld            vr2, a1, 0
++    vreplgr2vr.b   vr3, a3
++    vslt.b         vr4, vr1, vr3
++    vor.v          vr0, vr2, vr4
+ 
+-    vsetanyeqz.b   $fcc0, $vr0
+-    bcnez          $fcc0, L(un_first_end)
+-    vld            $vr0, a1, 16
+-    vadd.b         $vr3, $vr3, $vr1
++    vsetanyeqz.b   fcc0, vr0
++    bcnez          fcc0, L(un_first_end)
++    vld            vr0, a1, 16
++    vadd.b         vr3, vr3, vr1
+ 
+ 
+     addi.d         a1, a1, 16
+-    vshuf.b        $vr4, $vr0, $vr2, $vr3
+-    vsetanyeqz.b   $fcc0, $vr0
+-    bcnez          $fcc0, L(un_end)
++    vshuf.b        vr4, vr0, vr2, vr3
++    vsetanyeqz.b   fcc0, vr0
++    bcnez          fcc0, L(un_end)
+ 
+ L(un_loop):
+-    vor.v          $vr2, $vr0, $vr0
+-    vld            $vr0, a1, 16
+-    vst            $vr4, a2, 0
++    vor.v          vr2, vr0, vr0
++    vld            vr0, a1, 16
++    vst            vr4, a2, 0
+     addi.d         a1, a1, 16
+ 
+     addi.d         a2, a2, 16
+-    vshuf.b        $vr4, $vr0, $vr2, $vr3
+-    vsetanyeqz.b   $fcc0, $vr0
+-    bceqz          $fcc0, L(un_loop)
++    vshuf.b        vr4, vr0, vr2, vr3
++    vsetanyeqz.b   fcc0, vr0
++    bceqz          fcc0, L(un_loop)
+ 
+ L(un_end):
+-    vsetanyeqz.b    $fcc0, $vr4
+-    bcnez           $fcc0, 1f
+-    vst             $vr4, a2, 0
++    vsetanyeqz.b    fcc0, vr4
++    bcnez           fcc0, 1f
++    vst             vr4, a2, 0
+ 1:
+-    vmsknz.b        $vr1, $vr0
++    vmsknz.b        vr1, vr0
+ 
+ 
+-    movfr2gr.s      t0, $f1
++    movfr2gr.s      t0, fa1
+     cto.w           t0, t0
+     add.d           a1, a1, t0
+-    vld             $vr0, a1, -15
++    vld             vr0, a1, -15
+ 
+     add.d           a2, a2, t0
+     sub.d           a2, a2, a3
+-    vst             $vr0, a2, 1
++    vst             vr0, a2, 1
+     jr              ra
+ 
+ L(un_first_end):
+diff --git a/sysdeps/loongarch/lp64/multiarch/strlen-lasx.S b/sysdeps/loongarch/lp64/multiarch/strlen-lasx.S
+index fd6c002dbf..fc25dd507a 100644
+--- a/sysdeps/loongarch/lp64/multiarch/strlen-lasx.S
++++ b/sysdeps/loongarch/lp64/multiarch/strlen-lasx.S
+@@ -17,12 +17,12 @@ LEAF(STRLEN, 6)
+     move            a1, a0
+     bstrins.d       a0, zero, 4, 0
+     li.d            t1, -1
+-    xvld            $xr0, a0, 0
++    xvld            xr0, a0, 0
+ 
+-    xvmsknz.b       $xr0, $xr0
+-    xvpickve.w      $xr1, $xr0, 4
+-    vilvl.h         $vr0, $vr1, $vr0
+-    movfr2gr.s      t0, $f0  # sign extend
++    xvmsknz.b       xr0, xr0
++    xvpickve.w      xr1, xr0, 4
++    vilvl.h         vr0, vr1, vr0
++    movfr2gr.s      t0, fa0  # sign extend
+ 
+     sra.w           t0, t0, a1
+     beq             t0, t1, L(loop)
+@@ -30,18 +30,18 @@ LEAF(STRLEN, 6)
+     jr              ra
+ 
+ L(loop):
+-    xvld            $xr0, a0, 32
++    xvld            xr0, a0, 32
+     addi.d          a0, a0, 32
+-    xvsetanyeqz.b   $fcc0, $xr0
+-    bceqz           $fcc0, L(loop)
++    xvsetanyeqz.b   fcc0, xr0
++    bceqz           fcc0, L(loop)
+ 
+ 
+-    xvmsknz.b       $xr0, $xr0
++    xvmsknz.b       xr0, xr0
+     sub.d           a0, a0, a1
+-    xvpickve.w      $xr1, $xr0, 4
+-    vilvl.h         $vr0, $vr1, $vr0
++    xvpickve.w      xr1, xr0, 4
++    vilvl.h         vr0, vr1, vr0
+ 
+-    movfr2gr.s      t0, $f0
++    movfr2gr.s      t0, fa0
+     cto.w           t0, t0
+     add.d           a0, a0, t0
+     jr              ra
+diff --git a/sysdeps/loongarch/lp64/multiarch/strlen-lsx.S b/sysdeps/loongarch/lp64/multiarch/strlen-lsx.S
+index 6f31150633..45c3db93b0 100644
+--- a/sysdeps/loongarch/lp64/multiarch/strlen-lsx.S
++++ b/sysdeps/loongarch/lp64/multiarch/strlen-lsx.S
+@@ -16,15 +16,15 @@
+ LEAF(STRLEN, 6)
+     move            a1, a0
+     bstrins.d       a0, zero, 4, 0
+-    vld             $vr0, a0, 0
+-    vld             $vr1, a0, 16
++    vld             vr0, a0, 0
++    vld             vr1, a0, 16
+ 
+     li.d            t1, -1
+-    vmsknz.b        $vr0, $vr0
+-    vmsknz.b        $vr1, $vr1
+-    vilvl.h         $vr0, $vr1, $vr0
++    vmsknz.b        vr0, vr0
++    vmsknz.b        vr1, vr1
++    vilvl.h         vr0, vr1, vr0
+ 
+-    movfr2gr.s      t0, $f0
++    movfr2gr.s      t0, fa0
+     sra.w           t0, t0, a1
+     beq             t0, t1, L(loop)
+     cto.w           a0, t0
+@@ -36,19 +36,19 @@ LEAF(STRLEN, 6)
+ 
+ 
+ L(loop):
+-    vld             $vr0, a0, 32
+-    vld             $vr1, a0, 48
++    vld             vr0, a0, 32
++    vld             vr1, a0, 48
+     addi.d          a0, a0, 32
+-    vmin.bu         $vr2, $vr0, $vr1
++    vmin.bu         vr2, vr0, vr1
+ 
+-    vsetanyeqz.b    $fcc0, $vr2
+-    bceqz           $fcc0, L(loop)
+-    vmsknz.b        $vr0, $vr0
+-    vmsknz.b        $vr1, $vr1
++    vsetanyeqz.b    fcc0, vr2
++    bceqz           fcc0, L(loop)
++    vmsknz.b        vr0, vr0
++    vmsknz.b        vr1, vr1
+ 
+-    vilvl.h         $vr0, $vr1, $vr0
++    vilvl.h         vr0, vr1, vr0
+     sub.d           a0, a0, a1
+-    movfr2gr.s      t0, $f0
++    movfr2gr.s      t0, fa0
+     cto.w           t0, t0
+ 
+     add.d           a0, a0, t0
+diff --git a/sysdeps/loongarch/lp64/multiarch/strncmp-lsx.S b/sysdeps/loongarch/lp64/multiarch/strncmp-lsx.S
+index 2c6f9614a0..21f3e6890d 100644
+--- a/sysdeps/loongarch/lp64/multiarch/strncmp-lsx.S
++++ b/sysdeps/loongarch/lp64/multiarch/strncmp-lsx.S
+@@ -22,7 +22,7 @@ ENTRY_NO_ALIGN(STRNCMP)
+     beqz            a2, L(ret0)
+     pcaddi          t0, -5
+     andi            a3, a0, 0xf
+-    vld             $vr2, t0, 0
++    vld             vr2, t0, 0
+ 
+     andi            a4, a1, 0xf
+     li.d            t2, 16
+@@ -30,57 +30,57 @@ ENTRY_NO_ALIGN(STRNCMP)
+     xor             t0, a0, a3
+ 
+     xor             t1, a1, a4
+-    vld             $vr0, t0, 0
+-    vld             $vr1, t1, 0
+-    vreplgr2vr.b    $vr3, a3
++    vld             vr0, t0, 0
++    vld             vr1, t1, 0
++    vreplgr2vr.b    vr3, a3
+ 
+ 
+     sub.d           t2, t2, a3
+-    vadd.b          $vr3, $vr3, $vr2
+-    vshuf.b         $vr0, $vr3, $vr0, $vr3
+-    vshuf.b         $vr1, $vr3, $vr1, $vr3
++    vadd.b          vr3, vr3, vr2
++    vshuf.b         vr0, vr3, vr0, vr3
++    vshuf.b         vr1, vr3, vr1, vr3
+ 
+-    vseq.b          $vr3, $vr0, $vr1
+-    vmin.bu         $vr3, $vr0, $vr3
++    vseq.b          vr3, vr0, vr1
++    vmin.bu         vr3, vr0, vr3
+     bgeu            t2, a2, L(al_early_end)
+-    vsetanyeqz.b    $fcc0, $vr3
++    vsetanyeqz.b    fcc0, vr3
+ 
+-    bcnez           $fcc0, L(al_end)
++    bcnez           fcc0, L(al_end)
+     add.d           a3, a0, a2
+     addi.d          a4, a3, -1
+     bstrins.d       a4, zero, 3, 0
+ 
+     sub.d           a2, a3, a4
+ L(al_loop):
+-    vld             $vr0, t0, 16
+-    vld             $vr1, t1, 16
++    vld             vr0, t0, 16
++    vld             vr1, t1, 16
+     addi.d          t0, t0, 16
+ 
+ 
+     addi.d          t1, t1, 16
+-    vseq.b          $vr3, $vr0, $vr1
+-    vmin.bu         $vr3, $vr0, $vr3
++    vseq.b          vr3, vr0, vr1
++    vmin.bu         vr3, vr0, vr3
+     beq             t0, a4, L(al_early_end)
+ 
+-    vsetanyeqz.b    $fcc0, $vr3
+-    bceqz           $fcc0, L(al_loop)
++    vsetanyeqz.b    fcc0, vr3
++    bceqz           fcc0, L(al_loop)
+ L(al_end):
+-    vseqi.b         $vr3, $vr3, 0
+-    vfrstpi.b       $vr3, $vr3, 0
++    vseqi.b         vr3, vr3, 0
++    vfrstpi.b       vr3, vr3, 0
+ 
+-    vshuf.b         $vr0, $vr0, $vr0, $vr3
+-    vshuf.b         $vr1, $vr1, $vr1, $vr3
+-    vpickve2gr.bu   t0, $vr0, 0
+-    vpickve2gr.bu   t1, $vr1, 0
++    vshuf.b         vr0, vr0, vr0, vr3
++    vshuf.b         vr1, vr1, vr1, vr3
++    vpickve2gr.bu   t0, vr0, 0
++    vpickve2gr.bu   t1, vr1, 0
+ 
+     sub.d           a0, t0, t1
+     jr              ra
+ L(al_early_end):
+-    vreplgr2vr.b    $vr4, a2
+-    vslt.b          $vr4, $vr2, $vr4
++    vreplgr2vr.b    vr4, a2
++    vslt.b          vr4, vr2, vr4
+ 
+ 
+-    vorn.v          $vr3, $vr3, $vr4
++    vorn.v          vr3, vr3, vr4
+     b               L(al_end)
+ L(unaligned):
+     slt             a5, a3, a4
+@@ -94,64 +94,64 @@ L(unaligned):
+     andi            a4, a1, 0xf
+     xor             t0, a0, a3
+     xor             t1, a1, a4
+-    vld             $vr0, t0, 0
++    vld             vr0, t0, 0
+ 
+-    vld             $vr3, t1, 0
++    vld             vr3, t1, 0
+     sub.d           t2, t2, a3
+-    vreplgr2vr.b    $vr4, a3
+-    vreplgr2vr.b    $vr5, a4
++    vreplgr2vr.b    vr4, a3
++    vreplgr2vr.b    vr5, a4
+ 
+ 
+-    vaddi.bu        $vr6, $vr2, 16
+-    vsub.b          $vr7, $vr4, $vr5
+-    vsub.b          $vr6, $vr6, $vr7
+-    vadd.b          $vr4, $vr2, $vr4
++    vaddi.bu        vr6, vr2, 16
++    vsub.b          vr7, vr4, vr5
++    vsub.b          vr6, vr6, vr7
++    vadd.b          vr4, vr2, vr4
+ 
+-    vshuf.b         $vr1, $vr3, $vr3, $vr6
+-    vshuf.b         $vr0, $vr7, $vr0, $vr4
+-    vshuf.b         $vr1, $vr7, $vr1, $vr4
+-    vseq.b          $vr4, $vr0, $vr1
++    vshuf.b         vr1, vr3, vr3, vr6
++    vshuf.b         vr0, vr7, vr0, vr4
++    vshuf.b         vr1, vr7, vr1, vr4
++    vseq.b          vr4, vr0, vr1
+ 
+-    vmin.bu         $vr4, $vr0, $vr4
++    vmin.bu         vr4, vr0, vr4
+     bgeu            t2, a2, L(un_early_end)
+-    vsetanyeqz.b    $fcc0, $vr4
+-    bcnez           $fcc0, L(un_end)
++    vsetanyeqz.b    fcc0, vr4
++    bcnez           fcc0, L(un_end)
+ 
+     add.d           a6, a0, a2
+-    vslt.b          $vr5, $vr2, $vr5
++    vslt.b          vr5, vr2, vr5
+     addi.d          a7, a6, -1
+-    vor.v           $vr3, $vr3, $vr5
++    vor.v           vr3, vr3, vr5
+ 
+ 
+     bstrins.d       a7, zero, 3, 0
+     sub.d           a2, a6, a7
+ L(un_loop):
+-    vld             $vr0, t0, 16
++    vld             vr0, t0, 16
+     addi.d          t0, t0, 16
+ 
+-    vsetanyeqz.b    $fcc0, $vr3
+-    bcnez           $fcc0, L(has_zero)
++    vsetanyeqz.b    fcc0, vr3
++    bcnez           fcc0, L(has_zero)
+     beq             t0, a7, L(end_with_len)
+-    vor.v           $vr1, $vr3, $vr3
++    vor.v           vr1, vr3, vr3
+ 
+-    vld             $vr3, t1, 16
++    vld             vr3, t1, 16
+     addi.d          t1, t1, 16
+-    vshuf.b         $vr1, $vr3, $vr1, $vr6
+-    vseq.b          $vr4, $vr0, $vr1
++    vshuf.b         vr1, vr3, vr1, vr6
++    vseq.b          vr4, vr0, vr1
+ 
+-    vmin.bu         $vr4, $vr0, $vr4
+-    vsetanyeqz.b    $fcc0, $vr4
+-    bceqz           $fcc0, L(un_loop)
++    vmin.bu         vr4, vr0, vr4
++    vsetanyeqz.b    fcc0, vr4
++    bceqz           fcc0, L(un_loop)
+ L(un_end):
+-    vseqi.b         $vr4, $vr4, 0
++    vseqi.b         vr4, vr4, 0
+ 
+ 
+-    vfrstpi.b       $vr4, $vr4, 0
+-    vshuf.b         $vr0, $vr0, $vr0, $vr4
+-    vshuf.b         $vr1, $vr1, $vr1, $vr4
+-    vpickve2gr.bu   t0, $vr0, 0
++    vfrstpi.b       vr4, vr4, 0
++    vshuf.b         vr0, vr0, vr0, vr4
++    vshuf.b         vr1, vr1, vr1, vr4
++    vpickve2gr.bu   t0, vr0, 0
+ 
+-    vpickve2gr.bu   t1, $vr1, 0
++    vpickve2gr.bu   t1, vr1, 0
+     sub.d           t2, t0, t1
+     sub.d           t3, t1, t0
+     masknez         t0, t2, a5
+@@ -160,30 +160,30 @@ L(un_end):
+     or              a0, t0, t1
+     jr              ra
+ L(has_zero):
+-    vshuf.b         $vr1, $vr3, $vr3, $vr6
++    vshuf.b         vr1, vr3, vr3, vr6
+ 
+-    vseq.b          $vr4, $vr0, $vr1
+-    vmin.bu         $vr4, $vr0, $vr4
++    vseq.b          vr4, vr0, vr1
++    vmin.bu         vr4, vr0, vr4
+     bne             t0, a7, L(un_end)
+ L(un_early_end):
+-    vreplgr2vr.b    $vr5, a2
++    vreplgr2vr.b    vr5, a2
+ 
+-    vslt.b          $vr5, $vr2, $vr5
+-    vorn.v          $vr4, $vr4, $vr5
++    vslt.b          vr5, vr2, vr5
++    vorn.v          vr4, vr4, vr5
+     b               L(un_end)
+ L(end_with_len):
+     sub.d           a6, a3, a4
+ 
+     bgeu            a6, a2, 1f
+-    vld             $vr4, t1, 16
++    vld             vr4, t1, 16
+ 1:
+-    vshuf.b         $vr1, $vr4, $vr3, $vr6
+-    vseq.b          $vr4, $vr0, $vr1
++    vshuf.b         vr1, vr4, vr3, vr6
++    vseq.b          vr4, vr0, vr1
+ 
+-    vmin.bu         $vr4, $vr0, $vr4
+-    vreplgr2vr.b    $vr5, a2
+-    vslt.b          $vr5, $vr2, $vr5
+-    vorn.v          $vr4, $vr4, $vr5
++    vmin.bu         vr4, vr0, vr4
++    vreplgr2vr.b    vr5, a2
++    vslt.b          vr5, vr2, vr5
++    vorn.v          vr4, vr4, vr5
+ 
+     b               L(un_end)
+ L(ret0):
+diff --git a/sysdeps/loongarch/lp64/multiarch/strnlen-lasx.S b/sysdeps/loongarch/lp64/multiarch/strnlen-lasx.S
+index 910b52feba..6410a90725 100644
+--- a/sysdeps/loongarch/lp64/multiarch/strnlen-lasx.S
++++ b/sysdeps/loongarch/lp64/multiarch/strnlen-lasx.S
+@@ -19,23 +19,23 @@ LEAF(STRNLEN, 6)
+     li.d            t3, 65
+     sub.d           a2, a0, t1
+ 
+-    xvld            $xr0, a2, 0
+-    xvld            $xr1, a2, 32
++    xvld            xr0, a2, 0
++    xvld            xr1, a2, 32
+     sub.d           t1, t3, t1
+     move            a3, a0
+ 
+     sltu            t1, a1, t1
+-    xvmsknz.b       $xr0, $xr0
+-    xvmsknz.b       $xr1, $xr1
+-    xvpickve.w      $xr2, $xr0, 4
++    xvmsknz.b       xr0, xr0
++    xvmsknz.b       xr1, xr1
++    xvpickve.w      xr2, xr0, 4
+ 
+-    xvpickve.w      $xr3, $xr1, 4
+-    vilvl.h         $vr0, $vr2, $vr0
+-    vilvl.h         $vr1, $vr3, $vr1
+-    vilvl.w         $vr0, $vr1, $vr0
++    xvpickve.w      xr3, xr1, 4
++    vilvl.h         vr0, vr2, vr0
++    vilvl.h         vr1, vr3, vr1
++    vilvl.w         vr0, vr1, vr0
+ 
+ 
+-    movfr2gr.d      t0, $f0
++    movfr2gr.d      t0, fa0
+     sra.d           t0, t0, a0
+     orn             t1, t1, t0
+     bnez            t1, L(end)
+@@ -46,26 +46,26 @@ LEAF(STRNLEN, 6)
+     bstrins.d       a4, zero, 5, 0
+ 
+ L(loop):
+-    xvld            $xr0, a0, 64
+-    xvld            $xr1, a0, 96
++    xvld            xr0, a0, 64
++    xvld            xr1, a0, 96
+     addi.d          a0, a0, 64
+     beq             a0, a4, L(out)
+ 
+-    xvmin.bu        $xr2, $xr0, $xr1
+-    xvsetanyeqz.b   $fcc0, $xr2
+-    bceqz           $fcc0, L(loop)
++    xvmin.bu        xr2, xr0, xr1
++    xvsetanyeqz.b   fcc0, xr2
++    bceqz           fcc0, L(loop)
+ L(out):
+-    xvmsknz.b       $xr0, $xr0
++    xvmsknz.b       xr0, xr0
+ 
+ 
+-    xvmsknz.b       $xr1, $xr1
+-    xvpickve.w      $xr2, $xr0, 4
+-    xvpickve.w      $xr3, $xr1, 4
+-    vilvl.h         $vr0, $vr2, $vr0
++    xvmsknz.b       xr1, xr1
++    xvpickve.w      xr2, xr0, 4
++    xvpickve.w      xr3, xr1, 4
++    vilvl.h         vr0, vr2, vr0
+ 
+-    vilvl.h         $vr1, $vr3, $vr1
+-    vilvl.w         $vr0, $vr1, $vr0
+-    movfr2gr.d      t0, $f0
++    vilvl.h         vr1, vr3, vr1
++    vilvl.w         vr0, vr1, vr0
++    movfr2gr.d      t0, fa0
+ L(end):
+     sub.d           a0, a0, a3
+ 
+diff --git a/sysdeps/loongarch/lp64/multiarch/strnlen-lsx.S b/sysdeps/loongarch/lp64/multiarch/strnlen-lsx.S
+index db0e90ffef..9250a0cd35 100644
+--- a/sysdeps/loongarch/lp64/multiarch/strnlen-lsx.S
++++ b/sysdeps/loongarch/lp64/multiarch/strnlen-lsx.S
+@@ -19,17 +19,17 @@ LEAF(STRNLEN, 6)
+     li.d            t3, 33
+     sub.d           a2, a0, t1
+ 
+-    vld             $vr0, a2, 0
+-    vld             $vr1, a2, 16
++    vld             vr0, a2, 0
++    vld             vr1, a2, 16
+     sub.d           t1, t3, t1
+     move            a3, a0
+ 
+     sltu            t1, a1, t1
+-    vmsknz.b        $vr0, $vr0
+-    vmsknz.b        $vr1, $vr1
+-    vilvl.h         $vr0, $vr1, $vr0
++    vmsknz.b        vr0, vr0
++    vmsknz.b        vr1, vr1
++    vilvl.h         vr0, vr1, vr0
+ 
+-    movfr2gr.s      t0, $f0
++    movfr2gr.s      t0, fa0
+     sra.w           t0, t0, a0
+     orn             t1, t1, t0
+     bnez            t1, L(end)
+@@ -41,20 +41,20 @@ LEAF(STRNLEN, 6)
+     bstrins.d       a4, zero, 4, 0
+ 
+ L(loop):
+-    vld             $vr0, a0, 32
+-    vld             $vr1, a0, 48
++    vld             vr0, a0, 32
++    vld             vr1, a0, 48
+     addi.d          a0, a0, 32
+     beq             a0, a4, L(out)
+ 
+-    vmin.bu         $vr2, $vr0, $vr1
+-    vsetanyeqz.b    $fcc0, $vr2
+-    bceqz           $fcc0, L(loop)
++    vmin.bu         vr2, vr0, vr1
++    vsetanyeqz.b    fcc0, vr2
++    bceqz           fcc0, L(loop)
+ L(out):
+-    vmsknz.b        $vr0, $vr0
++    vmsknz.b        vr0, vr0
+ 
+-    vmsknz.b        $vr1, $vr1
+-    vilvl.h         $vr0, $vr1, $vr0
+-    movfr2gr.s      t0, $f0
++    vmsknz.b        vr1, vr1
++    vilvl.h         vr0, vr1, vr0
++    movfr2gr.s      t0, fa0
+ L(end):
+     sub.d           a0, a0, a3
+ 
+diff --git a/sysdeps/loongarch/lp64/multiarch/strrchr-lasx.S b/sysdeps/loongarch/lp64/multiarch/strrchr-lasx.S
+index 325458ff25..990be97332 100644
+--- a/sysdeps/loongarch/lp64/multiarch/strrchr-lasx.S
++++ b/sysdeps/loongarch/lp64/multiarch/strrchr-lasx.S
+@@ -14,45 +14,45 @@
+ LEAF(STRRCHR, 6)
+     andi            t1, a0, 0x3f
+     bstrins.d       a0, zero, 5, 0
+-    xvld            $xr0, a0, 0
+-    xvld            $xr1, a0, 32
++    xvld            xr0, a0, 0
++    xvld            xr1, a0, 32
+ 
+     li.d            t2, -1
+-    xvreplgr2vr.b   $xr4, a1
++    xvreplgr2vr.b   xr4, a1
+     move            a2, zero
+     sll.d           t3, t2, t1
+ 
+     addi.d          a0, a0, 63
+-    xvseq.b         $xr2, $xr0, $xr4
+-    xvseq.b         $xr3, $xr1, $xr4
+-    xvmsknz.b       $xr0, $xr0
++    xvseq.b         xr2, xr0, xr4
++    xvseq.b         xr3, xr1, xr4
++    xvmsknz.b       xr0, xr0
+ 
+-    xvmsknz.b       $xr1, $xr1
+-    xvpickve.w      $xr5, $xr0, 4
+-    xvpickve.w      $xr6, $xr1, 4
+-    vilvl.h         $vr0, $vr5, $vr0
++    xvmsknz.b       xr1, xr1
++    xvpickve.w      xr5, xr0, 4
++    xvpickve.w      xr6, xr1, 4
++    vilvl.h         vr0, vr5, vr0
+ 
+ 
+-    vilvl.h         $vr1, $vr6, $vr1
+-    xvmsknz.b       $xr2, $xr2
+-    xvmsknz.b       $xr3, $xr3
+-    xvpickve.w      $xr5, $xr2, 4
++    vilvl.h         vr1, vr6, vr1
++    xvmsknz.b       xr2, xr2
++    xvmsknz.b       xr3, xr3
++    xvpickve.w      xr5, xr2, 4
+ 
+-    xvpickve.w      $xr6, $xr3, 4
+-    vilvl.h         $vr2, $vr5, $vr2
+-    vilvl.h         $vr3, $vr6, $vr3
+-    vilvl.w         $vr0, $vr1, $vr0
++    xvpickve.w      xr6, xr3, 4
++    vilvl.h         vr2, vr5, vr2
++    vilvl.h         vr3, vr6, vr3
++    vilvl.w         vr0, vr1, vr0
+ 
+-    vilvl.w         $vr1, $vr3, $vr2
+-    movfr2gr.d      t0, $f0
+-    movfr2gr.d      t1, $f1
++    vilvl.w         vr1, vr3, vr2
++    movfr2gr.d      t0, fa0
++    movfr2gr.d      t1, fa1
+     orn             t0, t0, t3
+ 
+     and             t1, t1, t3
+     bne             t0, t2, L(end)
+ L(loop):
+-    xvld            $xr0, a0, 1
+-    xvld            $xr1, a0, 33
++    xvld            xr0, a0, 1
++    xvld            xr1, a0, 33
+ 
+ 
+     clz.d           t0, t1
+@@ -62,33 +62,33 @@ L(loop):
+ 
+     masknez         t1, a2, t1
+     or              a2, t0, t1
+-    xvseq.b         $xr2, $xr0, $xr4
+-    xvseq.b         $xr3, $xr1, $xr4
++    xvseq.b         xr2, xr0, xr4
++    xvseq.b         xr3, xr1, xr4
+ 
+-    xvmsknz.b       $xr2, $xr2
+-    xvmsknz.b       $xr3, $xr3
+-    xvpickve.w      $xr5, $xr2, 4
+-    xvpickve.w      $xr6, $xr3, 4
++    xvmsknz.b       xr2, xr2
++    xvmsknz.b       xr3, xr3
++    xvpickve.w      xr5, xr2, 4
++    xvpickve.w      xr6, xr3, 4
+ 
+-    vilvl.h         $vr2, $vr5, $vr2
+-    vilvl.h         $vr3, $vr6, $vr3
+-    xvmin.bu        $xr5, $xr0, $xr1
+-    vilvl.w         $vr2, $vr3, $vr2
++    vilvl.h         vr2, vr5, vr2
++    vilvl.h         vr3, vr6, vr3
++    xvmin.bu        xr5, xr0, xr1
++    vilvl.w         vr2, vr3, vr2
+ 
+ 
+-    xvsetanyeqz.b   $fcc0, $xr5
+-    movfr2gr.d      t1, $f2
+-    bceqz           $fcc0, L(loop)
+-    xvmsknz.b       $xr0, $xr0
++    xvsetanyeqz.b   fcc0, xr5
++    movfr2gr.d      t1, fa2
++    bceqz           fcc0, L(loop)
++    xvmsknz.b       xr0, xr0
+ 
+-    xvmsknz.b       $xr1, $xr1
+-    xvpickve.w      $xr5, $xr0, 4
+-    xvpickve.w      $xr6, $xr1, 4
+-    vilvl.h         $vr0, $vr5, $vr0
++    xvmsknz.b       xr1, xr1
++    xvpickve.w      xr5, xr0, 4
++    xvpickve.w      xr6, xr1, 4
++    vilvl.h         vr0, vr5, vr0
+ 
+-    vilvl.h         $vr1, $vr6, $vr1
+-    vilvl.w         $vr0, $vr1, $vr0
+-    movfr2gr.d      t0, $f0
++    vilvl.h         vr1, vr6, vr1
++    vilvl.w         vr0, vr1, vr0
++    movfr2gr.d      t0, fa0
+ L(end):
+     slli.d          t3, t2, 1   # shift one more for the last '\0'
+ 
+diff --git a/sysdeps/loongarch/lp64/multiarch/strrchr-lsx.S b/sysdeps/loongarch/lp64/multiarch/strrchr-lsx.S
+index e082eaab7b..6aede6ae33 100644
+--- a/sysdeps/loongarch/lp64/multiarch/strrchr-lsx.S
++++ b/sysdeps/loongarch/lp64/multiarch/strrchr-lsx.S
+@@ -14,35 +14,35 @@
+ LEAF(STRRCHR, 6)
+     andi            t1, a0, 0x1f
+     bstrins.d       a0, zero, 4, 0
+-    vld             $vr0, a0, 0
+-    vld             $vr1, a0, 16
++    vld             vr0, a0, 0
++    vld             vr1, a0, 16
+ 
+-    vreplgr2vr.b    $vr4, a1
++    vreplgr2vr.b    vr4, a1
+     li.d            t2, -1
+     move            a2, zero
+     addi.d          a0, a0, 31
+ 
+-    vseq.b          $vr2, $vr0, $vr4
+-    vseq.b          $vr3, $vr1, $vr4
+-    vmsknz.b        $vr0, $vr0
+-    vmsknz.b        $vr1, $vr1
++    vseq.b          vr2, vr0, vr4
++    vseq.b          vr3, vr1, vr4
++    vmsknz.b        vr0, vr0
++    vmsknz.b        vr1, vr1
+ 
+-    vmsknz.b        $vr2, $vr2
+-    vmsknz.b        $vr3, $vr3
+-    vilvl.h         $vr0, $vr1, $vr0
+-    vilvl.h         $vr1, $vr3, $vr2
++    vmsknz.b        vr2, vr2
++    vmsknz.b        vr3, vr3
++    vilvl.h         vr0, vr1, vr0
++    vilvl.h         vr1, vr3, vr2
+ 
+ 
+-    movfr2gr.s      t0, $f0
++    movfr2gr.s      t0, fa0
+     sll.d           t3, t2, t1
+-    movfr2gr.s      t1, $f1
++    movfr2gr.s      t1, fa1
+     orn             t0, t0, t3
+ 
+     and             t1, t1, t3
+     bne             t0, t2, L(end)
+ L(loop):
+-    vld             $vr0, a0, 1
+-    vld             $vr1, a0, 17
++    vld             vr0, a0, 1
++    vld             vr1, a0, 17
+ 
+     clz.w           t0, t1
+     sub.d           t0, a0, t0
+@@ -51,23 +51,23 @@ L(loop):
+ 
+     masknez         t1, a2, t1
+     or              a2, t0, t1
+-    vseq.b          $vr2, $vr0, $vr4
+-    vseq.b          $vr3, $vr1, $vr4
++    vseq.b          vr2, vr0, vr4
++    vseq.b          vr3, vr1, vr4
+ 
+ 
+-    vmsknz.b        $vr2, $vr2
+-    vmsknz.b        $vr3, $vr3
+-    vmin.bu         $vr5, $vr0, $vr1
+-    vilvl.h         $vr2, $vr3, $vr2
++    vmsknz.b        vr2, vr2
++    vmsknz.b        vr3, vr3
++    vmin.bu         vr5, vr0, vr1
++    vilvl.h         vr2, vr3, vr2
+ 
+-    vsetanyeqz.b    $fcc0, $vr5
+-    movfr2gr.s      t1, $f2
+-    bceqz           $fcc0, L(loop)
+-    vmsknz.b        $vr0, $vr0
++    vsetanyeqz.b    fcc0, vr5
++    movfr2gr.s      t1, fa2
++    bceqz           fcc0, L(loop)
++    vmsknz.b        vr0, vr0
+ 
+-    vmsknz.b        $vr1, $vr1
+-    vilvl.h         $vr0, $vr1, $vr0
+-    movfr2gr.s      t0, $f0
++    vmsknz.b        vr1, vr1
++    vilvl.h         vr0, vr1, vr0
++    movfr2gr.s      t0, fa0
+ L(end):
+     slli.d          t3, t2, 1   # shift one more for the last '\0'
+ 
+diff --git a/sysdeps/loongarch/lp64/s_cosf.S b/sysdeps/loongarch/lp64/s_cosf.S
+index 9fcbe6cad7..cb3a4faae6 100644
+--- a/sysdeps/loongarch/lp64/s_cosf.S
++++ b/sysdeps/loongarch/lp64/s_cosf.S
+@@ -213,9 +213,9 @@ L_even_integer:
+     fadd.d      fa0, fa0, fa1
+     fadd.d      fa2, fa2, fa3
+     fadd.d      fa0, fa0, fa2
+-    fcmp.sle.d  $fcc0, fa0, fa5
++    fcmp.sle.d  fcc0, fa0, fa5
+     addi.d      t0, t0, 3
+-    bcnez       $fcc0, L_leq_one
++    bcnez       fcc0, L_leq_one
+ /*L_gt_one:*/
+     fld.d       fa2, t1, 16 /* 2.0 */
+     addi.d      t0, t0, 1
+diff --git a/sysdeps/loongarch/lp64/s_sinf.S b/sysdeps/loongarch/lp64/s_sinf.S
+index 45d1c4b560..1e77282d45 100644
+--- a/sysdeps/loongarch/lp64/s_sinf.S
++++ b/sysdeps/loongarch/lp64/s_sinf.S
+@@ -215,9 +215,9 @@ L_even_integer:
+     fadd.d      fa0, fa0, fa1
+     fadd.d      fa2, fa2, fa3
+     fadd.d      fa0, fa0, fa2
+-    fcmp.sle.d  $fcc0, fa0, fa5
++    fcmp.sle.d  fcc0, fa0, fa5
+     addi.d      t0, t0, 1
+-    bcnez       $fcc0, L_leq_one
++    bcnez       fcc0, L_leq_one
+ /*L_gt_one:*/
+     fld.d       fa2, t1, 16 /* 2.0 */
+     addi.d      t0, t0, 1
+diff --git a/sysdeps/loongarch/sys/regdef.h b/sysdeps/loongarch/sys/regdef.h
+index 36f00939ca..b5ee57cfdd 100644
+--- a/sysdeps/loongarch/sys/regdef.h
++++ b/sysdeps/loongarch/sys/regdef.h
+@@ -71,6 +71,14 @@
+ # define fs5	$f29
+ # define fs6	$f30
+ # define fs7	$f31
++# define fcc0	$fcc0
++# define fcc1	$fcc1
++# define fcc2	$fcc2
++# define fcc3	$fcc3
++# define fcc4	$fcc4
++# define fcc5	$fcc5
++# define fcc6	$fcc6
++# define fcc7	$fcc7
+ 
+ #elif _LOONGARCH_SIM == _ABILP32
+ # error ABILP32 not support yet
+@@ -78,4 +86,70 @@
+ # error noABI
+ #endif
+ 
++#define vr0 $vr0
++#define vr1 $vr1
++#define vr2 $vr2
++#define vr3 $vr3
++#define vr4 $vr4
++#define vr5 $vr5
++#define vr6 $vr6
++#define vr7 $vr7
++#define vr8 $vr8
++#define vr9 $vr9
++#define vr10 $vr10
++#define vr11 $vr11
++#define vr12 $vr12
++#define vr13 $vr13
++#define vr14 $vr14
++#define vr15 $vr15
++#define vr16 $vr16
++#define vr17 $vr17
++#define vr18 $vr18
++#define vr19 $vr19
++#define vr20 $vr20
++#define vr21 $vr21
++#define vr22 $vr22
++#define vr23 $vr23
++#define vr24 $vr24
++#define vr25 $vr25
++#define vr26 $vr26
++#define vr27 $vr27
++#define vr28 $vr28
++#define vr29 $vr29
++#define vr30 $vr30
++#define vr31 $vr31
++
++#define xr0 $xr0
++#define xr1 $xr1
++#define xr2 $xr2
++#define xr3 $xr3
++#define xr4 $xr4
++#define xr5 $xr5
++#define xr6 $xr6
++#define xr7 $xr7
++#define xr8 $xr8
++#define xr9 $xr9
++#define xr10 $xr10
++#define xr11 $xr11
++#define xr12 $xr12
++#define xr13 $xr13
++#define xr14 $xr14
++#define xr15 $xr15
++#define xr16 $xr16
++#define xr17 $xr17
++#define xr18 $xr18
++#define xr19 $xr19
++#define xr20 $xr20
++#define xr21 $xr21
++#define xr22 $xr22
++#define xr23 $xr23
++#define xr24 $xr24
++#define xr25 $xr25
++#define xr26 $xr26
++#define xr27 $xr27
++#define xr28 $xr28
++#define xr29 $xr29
++#define xr30 $xr30
++#define xr31 $xr31
++
+ #endif /* _SYS_REGDEF_H */
+-- 
+2.40.1
+

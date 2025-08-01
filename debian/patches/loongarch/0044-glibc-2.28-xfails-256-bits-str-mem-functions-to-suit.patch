@@ -1,0 +1,36 @@
+From 60aaad7aaffe4beb2485040efc20b2358469756c Mon Sep 17 00:00:00 2001
+From: caiyinyu <caiyinyu@loongson.cn>
+Date: Mon, 13 Mar 2023 10:48:47 +0800
+Subject: [PATCH 44/44] glibc-2.28: xfails 256 bits str/mem functions to suit
+ 2k1000la and so on
+
+Change-Id: I6f5f81ea648ad54f1df0b262f80b62b1955b31e9
+---
+ string/Makefile | 10 ++++++++++
+ 1 file changed, 10 insertions(+)
+
+diff --git a/string/Makefile b/string/Makefile
+index d7ae7439f6..6271c38e6b 100644
+--- a/string/Makefile
++++ b/string/Makefile
+@@ -65,7 +65,17 @@ tests		:= tester inl-tester noinl-tester testcopy test-ffs	\
+ xtests = tst-strcoll-overflow
+ 
+ test-xfail-test-memcpy = yes
++test-xfail-test-memmove = yes
+ test-xfail-test-memset = yes
++test-xfail-test-memchr = yes
++test-xfail-test-memrchr = yes
++test-xfail-test-memcmp = yes
++test-xfail-test-rawmemchr = yes
++test-xfail-test-strchr = yes
++test-xfail-test-strrchr = yes
++test-xfail-test-strlen = yes
++test-xfail-test-strnlen = yes
++test-xfail-test-strchrnul = yes
+ 
+ # This test needs libdl.
+ ifeq (yes,$(build-shared))
+-- 
+2.20.1
+

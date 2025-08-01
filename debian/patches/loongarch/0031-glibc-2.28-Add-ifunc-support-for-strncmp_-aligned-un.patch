@@ -1,0 +1,1113 @@
+From 48ffeb225983b03cd0520501c6e825f01b0ca0ea Mon Sep 17 00:00:00 2001
+From: caiyinyu <caiyinyu@loongson.cn>
+Date: Sat, 18 Feb 2023 15:40:04 +0800
+Subject: [PATCH 31/44] glibc-2.28: Add ifunc support for
+ strncmp_{aligned,unaligned,lsx} and adjust related code.
+
+Change-Id: Ifb30ccdf6b69af887ee051568c7fac83833d19a4
+---
+ sysdeps/loongarch/lp64/multiarch/Makefile     |   3 +-
+ .../lp64/multiarch/ifunc-impl-list.c          |   6 +
+ sysdeps/loongarch/lp64/multiarch/strlen.c     |   2 +-
+ .../lp64/multiarch/strncmp-aligned.S          |   8 +
+ .../loongarch/lp64/multiarch/strncmp-lsx.S    | 197 ++++++++
+ .../lp64/multiarch/strncmp-unaligned.S        | 257 ++++++++++
+ .../multiarch/{ifunc-strlen.h => strncmp.c}   |  34 +-
+ sysdeps/loongarch/lp64/multiarch/strnlen.c    |   2 +-
+ sysdeps/loongarch/lp64/strncmp.S              | 460 +++++++++---------
+ 9 files changed, 712 insertions(+), 257 deletions(-)
+ create mode 100644 sysdeps/loongarch/lp64/multiarch/strncmp-aligned.S
+ create mode 100644 sysdeps/loongarch/lp64/multiarch/strncmp-lsx.S
+ create mode 100644 sysdeps/loongarch/lp64/multiarch/strncmp-unaligned.S
+ rename sysdeps/loongarch/lp64/multiarch/{ifunc-strlen.h => strncmp.c} (56%)
+
+diff --git a/sysdeps/loongarch/lp64/multiarch/Makefile b/sysdeps/loongarch/lp64/multiarch/Makefile
+index 437b45ac40..97b20583cc 100644
+--- a/sysdeps/loongarch/lp64/multiarch/Makefile
++++ b/sysdeps/loongarch/lp64/multiarch/Makefile
+@@ -10,5 +10,6 @@ sysdep_routines += memcpy-aligned memcpy-unaligned memcpy-lasx \
+ 		   strrchr-aligned strrchr-lsx \
+ 		   strlen-aligned strlen-unaligned strlen-lsx \
+ 		   strnlen-aligned strnlen-unaligned strnlen-lsx \
+-		   strchrnul-aligned strchrnul-unaligned strchrnul-lsx
++		   strchrnul-aligned strchrnul-unaligned strchrnul-lsx \
++		   strncmp-aligned strncmp-unaligned strncmp-lsx
+ endif
+diff --git a/sysdeps/loongarch/lp64/multiarch/ifunc-impl-list.c b/sysdeps/loongarch/lp64/multiarch/ifunc-impl-list.c
+index 0bbd8f40d7..1ec21318ba 100644
+--- a/sysdeps/loongarch/lp64/multiarch/ifunc-impl-list.c
++++ b/sysdeps/loongarch/lp64/multiarch/ifunc-impl-list.c
+@@ -104,6 +104,12 @@ __libc_ifunc_impl_list (const char *name, struct libc_ifunc_impl *array,
+ 	      IFUNC_IMPL_ADD (array, i, strchrnul, 1, __strchrnul_unaligned)
+ 	      )
+ 
++  IFUNC_IMPL (i, name, strncmp,
++	      IFUNC_IMPL_ADD (array, i, strncmp, 1, __strncmp_lsx)
++	      IFUNC_IMPL_ADD (array, i, strncmp, 1, __strncmp_aligned)
++	      IFUNC_IMPL_ADD (array, i, strncmp, 1, __strncmp_unaligned)
++	      )
++
+   return i;
+ }
+ 
+diff --git a/sysdeps/loongarch/lp64/multiarch/strlen.c b/sysdeps/loongarch/lp64/multiarch/strlen.c
+index f8820f5376..aee6541299 100644
+--- a/sysdeps/loongarch/lp64/multiarch/strlen.c
++++ b/sysdeps/loongarch/lp64/multiarch/strlen.c
+@@ -24,7 +24,7 @@
+ # undef strlen
+ 
+ # define SYMBOL_NAME strlen
+-# include "ifunc-strlen.h"
++# include "ifunc-strchr.h"
+ 
+ libc_ifunc_redirected (__redirect_strlen, __new_strlen,
+ 		       IFUNC_SELECTOR ());
+diff --git a/sysdeps/loongarch/lp64/multiarch/strncmp-aligned.S b/sysdeps/loongarch/lp64/multiarch/strncmp-aligned.S
+new file mode 100644
+index 0000000000..f371b19e6c
+--- /dev/null
++++ b/sysdeps/loongarch/lp64/multiarch/strncmp-aligned.S
+@@ -0,0 +1,8 @@
++
++#if IS_IN (libc)
++
++#define STRNCMP __strncmp_aligned
++
++#endif
++
++#include "../strncmp.S"
+diff --git a/sysdeps/loongarch/lp64/multiarch/strncmp-lsx.S b/sysdeps/loongarch/lp64/multiarch/strncmp-lsx.S
+new file mode 100644
+index 0000000000..c796479fea
+--- /dev/null
++++ b/sysdeps/loongarch/lp64/multiarch/strncmp-lsx.S
+@@ -0,0 +1,197 @@
++#ifdef _LIBC
++#include <sysdep.h>
++#include <sys/regdef.h>
++#include <sys/asm.h>
++#else
++#include <sys/asm.h>
++#include <sys/regdef.h>
++#endif
++
++#if IS_IN (libc)
++
++#define STRNCMP	__strncmp_lsx
++
++/* int strncmp (const char *s1, const char *s2); */
++
++L(magic_num):
++    .align          6
++    .dword          0x0706050403020100
++    .dword          0x0f0e0d0c0b0a0908
++ENTRY_NO_ALIGN(STRNCMP)
++    beqz            a2, L(ret0)
++    pcaddi          t0, -5
++    andi            a3, a0, 0xf
++    vld             $vr2, t0, 0
++
++    andi            a4, a1, 0xf
++    li.d            t2, 16
++    bne             a3, a4, L(unaligned)
++    xor             t0, a0, a3
++
++    xor             t1, a1, a4
++    vld             $vr0, t0, 0
++    vld             $vr1, t1, 0
++    vreplgr2vr.b    $vr3, a3
++
++
++    sub.d           t2, t2, a3
++    vadd.b          $vr3, $vr3, $vr2
++    vshuf.b         $vr0, $vr3, $vr0, $vr3
++    vshuf.b         $vr1, $vr3, $vr1, $vr3
++
++    vseq.b          $vr3, $vr0, $vr1
++    vmin.bu         $vr3, $vr0, $vr3
++    bgeu            t2, a2, L(al_early_end)
++    vsetanyeqz.b    $fcc0, $vr3
++
++    bcnez           $fcc0, L(al_end)
++    add.d           a3, a0, a2
++    addi.d          a4, a3, -1
++    bstrins.d       a4, zero, 3, 0
++
++    sub.d           a2, a3, a4
++L(al_loop):
++    vld             $vr0, t0, 16
++    vld             $vr1, t1, 16
++    addi.d          t0, t0, 16
++
++
++    addi.d          t1, t1, 16
++    vseq.b          $vr3, $vr0, $vr1
++    vmin.bu         $vr3, $vr0, $vr3
++    beq             t0, a4, L(al_early_end)
++
++    vsetanyeqz.b    $fcc0, $vr3
++    bceqz           $fcc0, L(al_loop)
++L(al_end):
++    vseqi.b         $vr3, $vr3, 0
++    vfrstpi.b       $vr3, $vr3, 0
++
++    vshuf.b         $vr0, $vr0, $vr0, $vr3
++    vshuf.b         $vr1, $vr1, $vr1, $vr3
++    vpickve2gr.bu   t0, $vr0, 0
++    vpickve2gr.bu   t1, $vr1, 0
++
++    sub.d           a0, t0, t1
++    jr              ra
++L(al_early_end):
++    vreplgr2vr.b    $vr4, a2
++    vslt.b          $vr4, $vr2, $vr4
++
++
++    vorn.v          $vr3, $vr3, $vr4
++    b               L(al_end)
++L(unaligned):
++    slt             a5, a3, a4
++    xor             t0, a0, a1
++
++    maskeqz         t0, t0, a5
++    xor             a0, a0, t0   # a0 hold the larger one
++    xor             a1, a1, t0   # a1 hold the small one
++    andi            a3, a0, 0xf
++
++    andi            a4, a1, 0xf
++    xor             t0, a0, a3
++    xor             t1, a1, a4
++    vld             $vr0, t0, 0
++
++    vld             $vr3, t1, 0
++    sub.d           t2, t2, a3
++    vreplgr2vr.b    $vr4, a3
++    vreplgr2vr.b    $vr5, a4
++
++
++    vaddi.bu        $vr6, $vr2, 16
++    vsub.b          $vr7, $vr4, $vr5
++    vsub.b          $vr6, $vr6, $vr7
++    vadd.b          $vr4, $vr2, $vr4
++
++    vshuf.b         $vr1, $vr3, $vr3, $vr6
++    vshuf.b         $vr0, $vr7, $vr0, $vr4
++    vshuf.b         $vr1, $vr7, $vr1, $vr4
++    vseq.b          $vr4, $vr0, $vr1
++
++    vmin.bu         $vr4, $vr0, $vr4
++    bgeu            t2, a2, L(un_early_end)
++    vsetanyeqz.b    $fcc0, $vr4
++    bcnez           $fcc0, L(un_end)
++
++    add.d           a6, a0, a2
++    vslt.b          $vr5, $vr2, $vr5
++    addi.d          a7, a6, -1
++    vor.v           $vr3, $vr3, $vr5
++
++
++    bstrins.d       a7, zero, 3, 0
++    sub.d           a2, a6, a7
++L(un_loop):
++    vld             $vr0, t0, 16
++    addi.d          t0, t0, 16
++
++    vsetanyeqz.b    $fcc0, $vr3
++    bcnez           $fcc0, L(has_zero)
++    beq             t0, a7, L(end_with_len)
++    vor.v           $vr1, $vr3, $vr3
++
++    vld             $vr3, t1, 16
++    addi.d          t1, t1, 16
++    vshuf.b         $vr1, $vr3, $vr1, $vr6
++    vseq.b          $vr4, $vr0, $vr1
++
++    vmin.bu         $vr4, $vr0, $vr4
++    vsetanyeqz.b    $fcc0, $vr4
++    bceqz           $fcc0, L(un_loop)
++L(un_end):
++    vseqi.b         $vr4, $vr4, 0
++
++
++    vfrstpi.b       $vr4, $vr4, 0
++    vshuf.b         $vr0, $vr0, $vr0, $vr4
++    vshuf.b         $vr1, $vr1, $vr1, $vr4
++    vpickve2gr.bu   t0, $vr0, 0
++
++    vpickve2gr.bu   t1, $vr1, 0
++    sub.d           t2, t0, t1
++    sub.d           t3, t1, t0
++    masknez         t0, t2, a5
++
++    maskeqz         t1, t3, a5
++    or              a0, t0, t1
++    jr              ra
++L(has_zero):
++    vshuf.b         $vr1, $vr3, $vr3, $vr6
++
++    vseq.b          $vr4, $vr0, $vr1
++    vmin.bu         $vr4, $vr0, $vr4
++    bne             t0, a7, L(un_end)
++L(un_early_end):
++    vreplgr2vr.b    $vr5, a2
++
++    vslt.b          $vr5, $vr2, $vr5
++    vorn.v          $vr4, $vr4, $vr5
++    b               L(un_end)
++L(end_with_len):
++    sub.d           a6, a3, a4
++
++    bgeu            a6, a2, 1f
++    vld             $vr4, t1, 16
++1:
++    vshuf.b         $vr1, $vr4, $vr3, $vr6
++    vseq.b          $vr4, $vr0, $vr1
++
++    vmin.bu         $vr4, $vr0, $vr4
++    vreplgr2vr.b    $vr5, a2
++    vslt.b          $vr5, $vr2, $vr5
++    vorn.v          $vr4, $vr4, $vr5
++
++    b               L(un_end)
++L(ret0):
++    move            a0, zero
++    jr              ra
++END(STRNCMP)
++
++#ifdef _LIBC
++libc_hidden_builtin_def (STRNCMP)
++#endif
++
++#endif
+diff --git a/sysdeps/loongarch/lp64/multiarch/strncmp-unaligned.S b/sysdeps/loongarch/lp64/multiarch/strncmp-unaligned.S
+new file mode 100644
+index 0000000000..558df29b1b
+--- /dev/null
++++ b/sysdeps/loongarch/lp64/multiarch/strncmp-unaligned.S
+@@ -0,0 +1,257 @@
++/* Copyright 2016 Loongson Technology Corporation Limited.  */
++
++/* Author: songyuekun songyuekun@loongson.cn.
++ * ISA: MIPS64R2
++ * ABI: N64
++ * basic algorithm :
++	+. let t0, t1 point to a0, a1, if a0 has smaller low 3 bit of a0 and a1,
++	   set a4 to 1 and let t0 point to the larger of lower 3bit of a0 and a1
++	+. if low 3 bit of a0 equal low 3 bit of a0, use a ldr one time and more ld other times;
++	+. if not, load partial t2 and t3, check if t2 has \0;
++	+. then use use ld for t0, ldr for t1,
++	+. if partial 8 byte  from t1 has \0, compare partial 8 byte from t1 with 8
++	   byte from t0 with a mask in a7
++	+. if not, ldl other part of t1, compare  8 byte from t1 with 8 byte from t0
++	+. if (v0 - 0x0101010101010101) & (~v0) & 0x8080808080808080 != 0, v0 has
++	   one byte is \0, else has no \0
++	+. for partial 8 byte from ldr t3, 0(a0), preload t3 with 0xffffffffffffffff
++*/
++
++#ifdef _LIBC
++#include <sysdep.h>
++#include <sys/regdef.h>
++#include <sys/asm.h>
++#else
++#include <sys/asm.h>
++#include <sys/regdef.h>
++#endif
++
++#if IS_IN (libc)
++
++#define STRNCMP	__strncmp_unaligned
++
++#define REP8_01 0x0101010101010101
++#define REP8_7f 0x7f7f7f7f7f7f7f7f
++#define REP8_80 0x8080808080808080
++
++/* Parameters and Results */
++#define src1	a0
++#define	src2	a1
++#define	limit	a2
++#define result	v0
++// Note: v0 = a0 in N64 ABI
++
++
++/* Internal variable */
++#define data1		t0
++#define	data2		t1
++#define	has_nul		t2
++#define	diff		t3
++#define syndrome	t4
++#define zeroones	t5
++#define	sevenf		t6
++#define pos		t7
++#define exchange	t8
++#define tmp1		a5
++#define	tmp2		a6
++#define	tmp3		a7
++#define src1_off    	a3
++#define limit_wd    	a4
++
++/* int strncmp (const char *s1, const char *s2); */
++
++LEAF(STRNCMP)
++	.align		4
++	beqz		limit, strncmp_ret0
++
++	xor		tmp1, src1, src2
++    	lu12i.w     	zeroones, 0x01010
++    	lu12i.w     	sevenf, 0x7f7f7
++    	andi        	src1_off, src1, 0x7
++    	ori         	zeroones, zeroones, 0x101
++	andi		tmp1, tmp1, 0x7
++    	ori         	sevenf, sevenf, 0xf7f
++    	bstrins.d   	zeroones, zeroones, 63, 32
++    	bstrins.d   	sevenf, sevenf, 63, 32
++	bnez		tmp1, strncmp_misaligned8
++	bnez		src1_off, strncmp_mutual_align
++
++    	addi.d      	limit_wd, limit, -1
++    	srli.d      	limit_wd, limit_wd, 3
++
++strncmp_loop_aligned:
++	ld.d		data1, src1, 0
++    	addi.d		src1, src1, 8
++	ld.d		data2, src2, 0
++    	addi.d		src2, src2, 8
++
++strncmp_start_realigned:
++	addi.d		limit_wd, limit_wd, -1
++	sub.d		tmp1, data1, zeroones
++	or		tmp2, data1, sevenf
++	xor	    	diff, data1, data2
++	andn		has_nul, tmp1, tmp2
++	srli.d		tmp1, limit_wd, 63
++	or	        syndrome, diff, has_nul
++	or		tmp2, syndrome, tmp1
++	beqz		tmp2, strncmp_loop_aligned
++
++    	/* if not reach limit.  */
++    	bge		limit_wd, zero, strncmp_not_limit
++
++    	/* if reach limit.  */
++    	andi        	limit, limit, 0x7
++    	li.w        	tmp1, 0x8
++    	sub.d       	limit, tmp1, limit
++    	slli.d      	limit, limit, 0x3
++    	li.d        	tmp1, -1
++    	srl.d       	tmp1, tmp1, limit
++    	and         	data1, data1, tmp1
++    	and         	data2, data2, tmp1
++    	orn         	syndrome, syndrome, tmp1
++
++
++strncmp_not_limit:
++	ctz.d		pos, syndrome
++	bstrins.d	pos, zero, 2, 0
++	srl.d		data1, data1, pos
++	srl.d		data2, data2, pos
++	andi		data1, data1, 0xff
++	andi		data2, data2, 0xff
++	sub.d		result, data1, data2
++	jr		ra
++
++strncmp_mutual_align:
++    	bstrins.d   	src1, zero, 2, 0
++    	bstrins.d   	src2, zero, 2, 0
++	slli.d		tmp1, src1_off,  0x3
++	ld.d		data1, src1, 0
++	ld.d		data2, src2, 0
++    	addi.d      	src2, src2, 8
++    	addi.d      	src1, src1, 8
++
++    	addi.d      	limit_wd, limit, -1
++    	andi        	tmp3, limit_wd, 0x7
++    	srli.d      	limit_wd, limit_wd, 3
++    	add.d       	limit, limit, src1_off
++    	add.d       	tmp3, tmp3, src1_off
++    	srli.d      	tmp3, tmp3, 3
++    	add.d       	limit_wd, limit_wd, tmp3
++
++	sub.d		tmp1, zero, tmp1
++	nor		tmp2, zero, zero
++	srl.d		tmp2, tmp2, tmp1
++	or		data1, data1, tmp2
++	or		data2, data2, tmp2
++	b		strncmp_start_realigned
++
++strncmp_misaligned8:
++
++    li.w        tmp1, 0x10
++    bge         limit, tmp1, strncmp_try_words
++strncmp_byte_loop:
++    ld.bu       data1, src1, 0
++    ld.bu       data2, src2, 0
++    addi.d      limit, limit, -1
++    xor         tmp1, data1, data2
++    masknez     tmp1, data1, tmp1
++    maskeqz     tmp1, limit, tmp1
++    beqz        tmp1, strncmp_done
++
++    ld.bu       data1, src1, 1
++    ld.bu       data2, src2, 1
++    addi.d      src1, src1, 2
++    addi.d      src2, src2, 2
++    addi.d      limit, limit, -1
++    xor         tmp1, data1, data2
++    masknez     tmp1, data1, tmp1
++    maskeqz     tmp1, limit, tmp1
++    bnez        tmp1, strncmp_byte_loop
++
++
++strncmp_done:
++    sub.d       result, data1, data2
++    jr		ra
++
++strncmp_try_words:
++    srli.d      limit_wd, limit, 3
++    beqz        src1_off, strncmp_do_misaligned
++
++    sub.d       src1_off, zero, src1_off
++    andi        src1_off, src1_off, 0x7
++    sub.d       limit, limit, src1_off
++    srli.d      limit_wd, limit, 0x3
++
++
++strncmp_page_end_loop:
++    ld.bu       data1, src1, 0
++    ld.bu       data2, src2, 0
++    addi.d      src1, src1, 1
++    addi.d      src2, src2, 1
++    xor         tmp1, data1, data2
++    masknez     tmp1, data1, tmp1
++    beqz        tmp1, strncmp_done
++    andi        tmp1, src1, 0x7
++    bnez        tmp1, strncmp_page_end_loop
++strncmp_do_misaligned:
++    li.w        src1_off, 0x8
++    addi.d      limit_wd, limit_wd, -1
++    blt         limit_wd, zero, strncmp_done_loop
++
++strncmp_loop_misaligned:
++    andi        tmp2, src2, 0xff8
++    xori        tmp2, tmp2, 0xff8
++    beqz        tmp2, strncmp_page_end_loop
++
++    ld.d        data1, src1, 0
++    ld.d        data2, src2, 0
++    addi.d      src1, src1, 8
++    addi.d      src2, src2, 8
++    sub.d       tmp1, data1, zeroones
++    or          tmp2, data1, sevenf
++    xor         diff, data1, data2
++    andn        has_nul, tmp1, tmp2
++    or          syndrome, diff, has_nul
++    bnez        syndrome, strncmp_not_limit
++    addi.d      limit_wd, limit_wd, -1
++    bge         limit_wd, zero, strncmp_loop_misaligned
++
++strncmp_done_loop:
++    andi        limit, limit, 0x7
++    beqz        limit, strncmp_not_limit
++
++    /* Read the last double word */
++    /* check if the final part is about to exceed the page */
++    andi        tmp1, src2, 0x7
++    andi        tmp2, src2, 0xff8
++    add.d       tmp1, tmp1, limit
++    xori        tmp2, tmp2, 0xff8
++    andi        tmp1, tmp1, 0x8
++    masknez     tmp1, tmp1, tmp2
++    bnez        tmp1, strncmp_byte_loop
++    addi.d      src1, src1, -8
++    addi.d      src2, src2, -8
++    ldx.d       data1, src1, limit
++    ldx.d       data2, src2, limit
++    sub.d       tmp1, data1, zeroones
++    or          tmp2, data1, sevenf
++    xor         diff, data1, data2
++    andn        has_nul, tmp1, tmp2
++    or          syndrome, diff, has_nul
++    bnez        syndrome, strncmp_not_limit
++
++strncmp_ret0:
++    move	result, zero
++    jr		ra
++
++/* check if ((src1 != 0) && ((src2 == 0 ) || (src1 < src2)))
++   then exchange(src1,src2).  */
++
++END(STRNCMP)
++#ifndef ANDROID_CHANGES
++#ifdef _LIBC
++libc_hidden_builtin_def (STRNCMP)
++#endif
++#endif
++
++#endif
+diff --git a/sysdeps/loongarch/lp64/multiarch/ifunc-strlen.h b/sysdeps/loongarch/lp64/multiarch/strncmp.c
+similarity index 56%
+rename from sysdeps/loongarch/lp64/multiarch/ifunc-strlen.h
+rename to sysdeps/loongarch/lp64/multiarch/strncmp.c
+index 06cec287e0..dcbdbbf20e 100644
+--- a/sysdeps/loongarch/lp64/multiarch/ifunc-strlen.h
++++ b/sysdeps/loongarch/lp64/multiarch/strncmp.c
+@@ -1,6 +1,6 @@
+-/* Common definition for str{,n}len implementation.
++/* Multiple versions of strncmp.
+    All versions must be listed in ifunc-impl-list.c.
+-   Copyright (C) 2017-2022 Free Software Foundation, Inc.
++   Copyright (C) 2017-2018 Free Software Foundation, Inc.
+    This file is part of the GNU C Library.
+ 
+    The GNU C Library is free software; you can redistribute it and/or
+@@ -15,23 +15,21 @@
+ 
+    You should have received a copy of the GNU Lesser General Public
+    License along with the GNU C Library; if not, see
+-   <https://www.gnu.org/licenses/>.  */
++   <http://www.gnu.org/licenses/>.  */
+ 
+-#include <init-arch.h>
++/* Define multiple versions only for the definition in libc.  */
++#if IS_IN (libc)
++# define strncmp __redirect_strncmp
++# include <string.h>
++# undef strncmp
+ 
+-extern __typeof (REDIRECT_NAME) OPTIMIZE (lsx) attribute_hidden;
+-extern __typeof (REDIRECT_NAME) OPTIMIZE (aligned) attribute_hidden;
+-extern __typeof (REDIRECT_NAME) OPTIMIZE (unaligned) attribute_hidden;
++# define SYMBOL_NAME strncmp
++# include "ifunc-strchr.h"
+ 
+-static inline void *
+-IFUNC_SELECTOR (void)
+-{
+-  INIT_ARCH();
++libc_ifunc_redirected (__redirect_strncmp, strncmp, IFUNC_SELECTOR ());
+ 
+-  if (SUPPORT_LSX)
+-    return OPTIMIZE (lsx);
+-  if (SUPPORT_UAL)
+-    return OPTIMIZE (unaligned);
+-  else
+-    return OPTIMIZE (aligned);
+-}
++# ifdef SHARED
++__hidden_ver1 (strncmp, __GI_strncmp, __redirect_strncmp)
++  __attribute__ ((visibility ("hidden")));
++# endif
++#endif
+diff --git a/sysdeps/loongarch/lp64/multiarch/strnlen.c b/sysdeps/loongarch/lp64/multiarch/strnlen.c
+index ad752ec7ea..ab75e91bfd 100644
+--- a/sysdeps/loongarch/lp64/multiarch/strnlen.c
++++ b/sysdeps/loongarch/lp64/multiarch/strnlen.c
+@@ -26,7 +26,7 @@
+ # undef strnlen
+ 
+ # define SYMBOL_NAME strnlen
+-# include "ifunc-strlen.h"
++# include "ifunc-strchr.h"
+ 
+ libc_ifunc_redirected (__redirect_strnlen, __strnlen, IFUNC_SELECTOR ());
+ weak_alias (__strnlen, strnlen);
+diff --git a/sysdeps/loongarch/lp64/strncmp.S b/sysdeps/loongarch/lp64/strncmp.S
+index 29cc7b0234..dcb1535096 100644
+--- a/sysdeps/loongarch/lp64/strncmp.S
++++ b/sysdeps/loongarch/lp64/strncmp.S
+@@ -1,269 +1,257 @@
+-/* Copyright 2016 Loongson Technology Corporation Limited  */
++#ifdef _LIBC
++#include <sysdep.h>
++#include <sys/regdef.h>
++#include <sys/asm.h>
++#else
++#include <sys/asm.h>
++#include <sys/regdef.h>
++#endif
+ 
+-/* Author: songyuekun songyuekun@loongson.cn */
++#ifndef STRNCMP
++#define STRNCMP strncmp
++#endif
+ 
+-/*
+- * ISA: MIPS64R2
+- * ABI: N64
+- */
++/* int strncmp (const char *s1, const char *s2); */
+ 
+-/* basic algorithm :
++LEAF(STRNCMP)
++    .align      6
++    beqz        a2, L(ret0)
++    xor         a4, a0, a1
++    lu12i.w     t5, 0x01010
++    lu12i.w     t6, 0x7f7f7
++
++    andi        a3, a0, 0x7
++    ori         t5, t5, 0x101
++    andi        a4, a4, 0x7
++    ori         t6, t6, 0xf7f
+ 
+-	+.	let t0, t1 point to a0, a1, if a0 has smaller low 3 bit of a0 and a1,
+-		set a4 to 1 and let t0 point to the larger of lower 3bit of a0 and a1
++    bstrins.d   t5, t5, 63, 32
++    bstrins.d   t6, t6, 63, 32
+ 
+-	+.	if low 3 bit of a0 equal low 3 bit of a0, use a ldr one time and more ld other times;
++    bnez        a4, L(unalign)
++    bnez        a3, L(mutual_align)
+ 
+-	+.	if not,  load partial t2 and t3, check if t2 has \0;
++L(a_loop):
++    ld.d        t0, a0, 0
++    ld.d        t1, a1, 0
++    addi.d      a0, a0, 8
++    addi.d      a1, a1, 8
+ 
+-	+.	then use use ld for t0, ldr for t1,
+ 
+-	+.	if partial 8 byte  from t1 has \0, compare partial 8 byte from t1 with 8
+-		byte from t0 with a mask in a7
++    sltui       t7, a2, 9
+ 
+-	+.	if not, ldl other part of t1, compare  8 byte from t1 with 8 byte from t0
++L(start_realign):
++    sub.d       t2, t0, t5
++    nor         t3, t0, t6
++    xor         t4, t0, t1
+ 
+-	+.	if (v0 - 0x0101010101010101) & (~v0) & 0x8080808080808080 != 0, v0 has
+-		one byte is \0, else has no \0
++    and         t2, t2, t3
++    addi.d      a2, a2, -8
+ 
+-	+.	for partial 8 byte from ldr t3, 0(a0), preload t3 with 0xffffffffffffffff
++    or          t2, t2, t4
++    or          t3, t2, t7
++    beqz        t3, L(a_loop)
+ 
++L(end):
++    bge         zero, t7, L(out)
++    andi        t4, a2, 7
++    li.d        t3, -1
++    addi.d      t4, t4, -1
++    slli.d      t4, t4, 3
++    sll.d       t3, t3, t4
++    or          t2, t2, t3
+ 
+-*/
+-#include <sys/asm.h>
+-#include <sys/regdef.h>
+ 
++L(out):
++    ctz.d       t3, t2
++    bstrins.d   t3, zero, 2, 0
++    srl.d       t0, t0, t3
++    srl.d       t1, t1, t3
+ 
+-#define STRNCMP	strncmp
++    andi        t0, t0, 0xff
++    andi        t1, t1, 0xff
++    sub.d       a0, t0, t1
++    jr          ra
+ 
+-#define REP8_01 0x0101010101010101
+-#define REP8_7f 0x7f7f7f7f7f7f7f7f
+-#define REP8_80 0x8080808080808080
++L(mutual_align):
++    bstrins.d   a0, zero, 2, 0
++    bstrins.d   a1, zero, 2, 0
++    slli.d      a5, a3, 0x3
++    li.d        t2, -1
+ 
+-/* Parameters and Results */
+-#define src1	a0
+-#define	src2	a1
+-#define	limit	a2
+-#define result	v0
+-// Note: v0 = a0 in N64 ABI
++    ld.d        t0, a0, 0
++    ld.d        t1, a1, 0
+ 
++    li.d        t3, 9
++    sll.d       t2, t2, a5
+ 
+-/* Internal variable */
+-#define data1		t0
+-#define	data2		t1
+-#define	has_nul		t2
+-#define	diff		t3
+-#define syndrome	t4
+-#define zeroones	t5
+-#define	sevenf		t6
+-#define pos		t7
+-#define exchange	t8
+-#define tmp1		a5
+-#define	tmp2		a6
+-#define	tmp3		a7
+-#define src1_off    a3
+-#define limit_wd    a4
++    sub.d       t3, t3, a3
++    addi.d      a0, a0, 8
+ 
++    sltu        t7, a2, t3
++    addi.d      a1, a1, 8
+ 
+-/* int strncmp (const char *s1, const char *s2); */
++    add.d       a2, a2, a3
++    orn         t0, t0, t2
++    orn         t1, t1, t2
++    b           L(start_realign)
+ 
+-LEAF(STRNCMP)
+-	.align		4
+-    beqz        limit, strncmp_ret0
+-
+-	xor		tmp1, src1, src2
+-    lu12i.w     zeroones, 0x01010
+-    lu12i.w     sevenf, 0x7f7f7
+-    andi        src1_off, src1, 0x7
+-    ori         zeroones, zeroones, 0x101
+-	andi		tmp1, tmp1, 0x7
+-    ori         sevenf, sevenf, 0xf7f
+-    bstrins.d   zeroones, zeroones, 63, 32
+-    bstrins.d   sevenf, sevenf, 63, 32
+-	bnez		tmp1, strncmp_misaligned8
+-	bnez		src1_off, strncmp_mutual_align
+-    /* */
+-    addi.d      limit_wd, limit, -1
+-    srli.d      limit_wd, limit_wd, 3
+-
+-strncmp_loop_aligned:
+-	ld.d		data1, src1, 0
+-    addi.d      src1, src1, 8
+-	ld.d		data2, src2, 0
+-    addi.d      src2, src2, 8
+-strncmp_start_realigned:
+-    addi.d      limit_wd, limit_wd, -1
+-	sub.d		tmp1, data1, zeroones
+-	or		    tmp2, data1, sevenf
+-	xor	    	diff, data1, data2
+-	andn		has_nul, tmp1, tmp2
+-    srli.d      tmp1, limit_wd, 63
+-	or		    syndrome, diff, has_nul
+-    or          tmp2, syndrome, tmp1
+-	beqz		tmp2, strncmp_loop_aligned
+-
+-    /* if not reach limit */
+-    bge         limit_wd, zero, strncmp_not_limit
+-    /* if reach limit */
+-    andi        limit, limit, 0x7
+-    li.w          tmp1, 0x8
+-    sub.d       limit, tmp1, limit
+-    slli.d      limit, limit, 0x3
+-    li.d        tmp1, -1
+-    srl.d       tmp1, tmp1, limit
+-    and         data1, data1, tmp1
+-    and         data2, data2, tmp1
+-    orn         syndrome, syndrome, tmp1
+-
+-
+-strncmp_not_limit:
+-	ctz.d		pos, syndrome
+-    bstrins.d   pos, zero, 2, 0
+-	srl.d		data1, data1, pos
+-	srl.d		data2, data2, pos
+-	andi		data1, data1, 0xff
+-	andi		data2, data2, 0xff
+-	sub.d		result, data1, data2
+-	jr ra
+-
+-
+-
+-strncmp_mutual_align:
+-    bstrins.d   src1, zero, 2, 0
+-    bstrins.d   src2, zero, 2, 0
+-	slli.d		tmp1, src1_off,  0x3
+-	ld.d		data1, src1, 0
+-	ld.d		data2, src2, 0
+-    addi.d      src2, src2, 8
+-    addi.d      src1, src1, 8
+-
+-    addi.d      limit_wd, limit, -1
+-    andi        tmp3, limit_wd, 0x7
+-    srli.d      limit_wd, limit_wd, 3
+-    add.d       limit, limit, src1_off
+-    add.d       tmp3, tmp3, src1_off
+-    srli.d      tmp3, tmp3, 3
+-    add.d       limit_wd, limit_wd, tmp3
+-
+-	sub.d		tmp1, zero, tmp1
+-	nor		tmp2, zero, zero
+-	srl.d		tmp2, tmp2, tmp1
+-	or		data1, data1, tmp2
+-	or		data2, data2, tmp2
+-	b		strncmp_start_realigned
+-
+-strncmp_misaligned8:
+-
+-    li.w          tmp1, 0x10
+-    bge         limit, tmp1, strncmp_try_words
+-strncmp_byte_loop:
+-    ld.bu       data1, src1, 0
+-    ld.bu       data2, src2, 0
+-    addi.d      limit, limit, -1
+-    xor         tmp1, data1, data2
+-    masknez     tmp1, data1, tmp1
+-    maskeqz     tmp1, limit, tmp1
+-    beqz        tmp1, strncmp_done
+-
+-    ld.bu       data1, src1, 1
+-    ld.bu       data2, src2, 1
+-    addi.d      src1, src1, 2
+-    addi.d      src2, src2, 2
+-    addi.d      limit, limit, -1
+-    xor         tmp1, data1, data2
+-    masknez     tmp1, data1, tmp1
+-    maskeqz     tmp1, limit, tmp1
+-    bnez        tmp1, strncmp_byte_loop
+-
+-
+-strncmp_done:
+-    sub.d       result, data1, data2
+-    jr ra
++L(ret0):
++    move        a0, zero
++    jr          ra
+ 
+-strncmp_try_words:
+-    srli.d      limit_wd, limit, 3
+-    beqz        src1_off, strncmp_do_misaligned
+-
+-    sub.d       src1_off, zero, src1_off
+-    andi        src1_off, src1_off, 0x7
+-    sub.d       limit, limit, src1_off
+-    srli.d      limit_wd, limit, 0x3
+-
+-
+-strncmp_page_end_loop:
+-    ld.bu       data1, src1, 0
+-    ld.bu       data2, src2, 0
+-    addi.d      src1, src1, 1
+-    addi.d      src2, src2, 1
+-    xor         tmp1, data1, data2
+-    masknez     tmp1, data1, tmp1
+-    beqz        tmp1, strncmp_done
+-    andi        tmp1, src1, 0x7
+-    bnez        tmp1, strncmp_page_end_loop
+-strncmp_do_misaligned:
+-    li.w          src1_off, 0x8
+-    addi.d      limit_wd, limit_wd, -1
+-    blt         limit_wd, zero, strncmp_done_loop
+-
+-strncmp_loop_misaligned:
+-    andi        tmp2, src2, 0xff8
+-    xori        tmp2, tmp2, 0xff8
+-    beqz        tmp2, strncmp_page_end_loop
+-
+-    ld.d        data1, src1, 0
+-    ld.d        data2, src2, 0
+-    addi.d      src1, src1, 8
+-    addi.d      src2, src2, 8
+-    sub.d       tmp1, data1, zeroones
+-    or          tmp2, data1, sevenf
+-    xor         diff, data1, data2
+-    andn        has_nul, tmp1, tmp2
+-    or          syndrome, diff, has_nul
+-    bnez        syndrome, strncmp_not_limit
+-    addi.d      limit_wd, limit_wd, -1
+-    #blt         zero, limit_wd, strncmp_loop_misaligned
+-    bge         limit_wd, zero, strncmp_loop_misaligned
+-
+-strncmp_done_loop:
+-    andi        limit, limit, 0x7
+-    beqz        limit, strncmp_not_limit
+-    /* Read the last double word */
+-    /* check if the final part is about to exceed the page */
+-    andi        tmp1, src2, 0x7
+-    andi        tmp2, src2, 0xff8
+-    add.d       tmp1, tmp1, limit
+-    xori        tmp2, tmp2, 0xff8
+-    andi        tmp1, tmp1, 0x8
+-    masknez     tmp1, tmp1, tmp2
+-    bnez        tmp1, strncmp_byte_loop
+-    addi.d      src1, src1, -8
+-    addi.d      src2, src2, -8
+-    ldx.d       data1, src1, limit
+-    ldx.d       data2, src2, limit
+-    sub.d       tmp1, data1, zeroones
+-    or          tmp2, data1, sevenf
+-    xor         diff, data1, data2
+-    andn        has_nul, tmp1, tmp2
+-    or          syndrome, diff, has_nul
+-    bnez        syndrome, strncmp_not_limit
+-
+-strncmp_ret0:
+-    move result, zero
+-    jr ra
+-/* check
+-    if ((src1 != 0) && ((src2 == 0 ) || (src1 < src2)))
+-    then exchange(src1,src2)
++L(unalign):
++    li.d        t8, 8
++    blt         a2, t8, L(short_cmp)
++
++    # swap a0 and a1 in case a3 > a4
++    andi        a4, a1, 0x7
++    sltu        t8, a4, a3
++    xor         a6, a0, a1
++    maskeqz     a6, a6, t8
++    xor         a0, a0, a6
++    xor         a1, a1, a6
++
++    andi        a3, a0, 0x7
++    andi        a4, a1, 0x7
++
++    bstrins.d   a0, zero, 2, 0
++    bstrins.d   a1, zero, 2, 0
++
++    li.d        t2, -1
++    li.d        t3, 9
++
++    ld.d        t0, a0, 0
++    ld.d        t1, a1, 0
++
++    sub.d       t3, t3, a4
++    sub.d       a3, a4, a3
++
++    slli.d      t4, a4, 3
++    slli.d      a6, a3, 3
++
++    sub.d       a5, zero, a6
++    sltu        t7, a2, t3
++
++    rotr.d      a7, t0, a5
++    sll.d       t4, t2, t4 # mask for first num
++
++    add.d       a2, a2, a4
++    sll.d       a4, t2, a6 # mask for a7
++
++    orn         t0, a7, t4
++    orn         t1, t1, t4
+ 
+-*/
++    sub.d       t2, t0, t5
++    nor         t4, t0, t6
++    and         t2, t2, t4
+ 
++    xor         t3, t0, t1
++    or          t2, t2, t3
+ 
++    or          t3, t2, t7
++    bnez        t3, L(un_end)
+ 
++    andn        a7, a7, a4
++    addi.d      a3, a3, 1
+ 
++L(un_loop):
++    addi.d      a2, a2, -8
++    # in case remaining part has '\0', no more load instructions should be executed on a0 address
++    or          t0, a7, a4
++    sltu        t7, a2, a3
+ 
++    sub.d       t2, t0, t5
++    nor         t3, t0, t6
++    and         t2, t2, t3
++
++    or          t3, t2, t7
++    bnez        t3, L(check_remaining)
++
++    ld.d        t7, a0, 8
++    ld.d        t1, a1, 8
++    addi.d      a0, a0, 8
++    addi.d      a1, a1, 8
++
++    sll.d       t4, t7, a6
++    sub.d       t2, t1, t5
++    nor         t3, t1, t6
++
++    or          t0, t4, a7
++    srl.d       a7, t7, a5
++
++    and         t2, t2, t3
++    xor         t3, t0, t1
++
++    sltui       t7, a2, 9
++    or          t2, t2, t3
++
++    or          t3, t2, t7
++    beqz        t3, L(un_loop)
++    b           L(un_end)
++
++L(check_remaining):
++    ld.d        t1, a1, 8
++    xor         t3, t1, a7
++    or          t2, t2, t3
++
++L(un_end):
++    bge         zero, t7, L(un_out)
++    andi        t4, a2, 7
++    li.d        t3, -1
++
++    addi.d      t4, t4, -1
++    slli.d      t4, t4, 3
++    sll.d       t3, t3, t4
++    or          t2, t2, t3
++
++L(un_out):
++    ctz.d       t3, t2
++    bstrins.d   t3, zero, 2, 0
++    srl.d       t0, t0, t3
++    srl.d       t1, t1, t3
++
++    andi        t0, t0, 0xff
++    andi        t1, t1, 0xff
++
++    sub.d       a4, t0, t1
++    sub.d       a5, t1, t0
++
++    maskeqz     a6, a5, t8
++    masknez     a0, a4, t8
++
++    or          a0, a0, a6
++    jr          ra
++
++L(short_cmp):
++    ld.bu       t0, a0, 0
++    ld.bu       t1, a1, 0
++    addi.d      a2, a2, -1
++
++    xor         t2, t0, t1
++    masknez     t2, t0, t2
++    maskeqz     t2, a2, t2
++
++    beqz        t2, L(short_out)
++
++    ld.bu       t0, a0, 1
++    ld.bu       t1, a1, 1
++
++    addi.d      a2, a2, -1
++    addi.d      a0, a0, 2
++
++    addi.d      a1, a1, 2
++    xor         t2, t0, t1
++    masknez     t2, t0, t2
++    maskeqz     t2, a2, t2
++
++    bnez        t2, L(short_cmp)
++
++L(short_out):
++    sub.d       a0, t0, t1
++    jr ra
+ 
+ END(STRNCMP)
+-#ifndef ANDROID_CHANGES
+ #ifdef _LIBC
+-libc_hidden_builtin_def (strncmp)
+-#endif
++libc_hidden_builtin_def (STRNCMP)
+ #endif
+-- 
+2.20.1
+

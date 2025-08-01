@@ -1,0 +1,121 @@
+From 68336ce9a513e8fa41d241edae7d9d6eeee54414 Mon Sep 17 00:00:00 2001
+From: "Gabriel F. T. Gomes" <gabrielftg@linux.ibm.com>
+Date: Tue, 3 Dec 2019 22:10:50 -0300
+Subject: [PATCH 13/14] Attach to test in container from debugglibc.sh
+
+Some test cases are meant to be ran inside the container infrastructure
+and make check automatically runs them as such.  However, running a
+single test case in a container without make check is useful.
+
+This patch adds a new --tool option to testrun.sh that makes this easy,
+as well as it adds a new option (-c or --in-container) to debugglibc.sh,
+which causes the program under test to be ran in a container (with
+WAIT_FOR_DEBUGGER=1), then automatically attaches GDB to it.
+
+Automatically detecting if a test case is supposed to be ran inside a
+container is harder (if not impossible), as Carlos pointed out [1],
+however, this patch makes it easier to do it manually:
+
+  Using testrun.sh with containerized test:
+
+    $ ./testrun.sh --tool=container /absolute/path/to/program
+
+  Using debugglibc.sh with containerized test:
+
+    $ ./debugglibc.sh -c /absolute/path/to/program
+
+Note: running these commands with relative paths causes error and
+warning messages to be displayed, although the test case might succeed.
+
+For example, with relative path:
+
+  $ ./testrun.sh --tool=container elf/tst-ldconfig-bad-aux-cache
+  error: subprocess failed: execv
+  error:   unexpected error output from subprocess
+  /sbin/ldconfig: Warning: ignoring configuration file that cannot be opened: /etc/ld.so.conf: No such file or directory
+  info: f    0    1064   /var/cache/ldconfig/aux-cache            20 aux-cache
+  [...]
+
+Whereas with absolute paths, the errors and warnings are gone:
+
+  $ ./testrun.sh --tool=container $PWD/elf/tst-ldconfig-bad-aux-cache
+  info: f    0    1064   /var/cache/ldconfig/aux-cache            20 aux-cache
+  [...]
+
+[1] https://sourceware.org/ml/libc-alpha/2019-11/msg00873.html
+
+Reviewed-by: Carlos O'Donell <carlos@redhat.com>
+Change-Id: I62b05775cef0aefbf2ba60b2f89500d8dee89898
+---
+ Makefile | 20 ++++++++++++++++++++
+ 1 file changed, 20 insertions(+)
+
+diff --git a/Makefile b/Makefile
+index 90f0675ca8..33cefc8d8b 100644
+--- a/Makefile
++++ b/Makefile
+@@ -180,6 +180,11 @@ case "$$toolname" in
+   valgrind)
+     exec env $(run-program-env) valgrind $(test-via-rtld-prefix) $${1+"$$@"}
+     ;;
++  container)
++    exec env $(run-program-env) $(test-via-rtld-prefix) \
++      $(common-objdir)/support/test-container \
++      env $(run-program-env) $(test-via-rtld-prefix) $${1+"$$@"}
++    ;;
+   *)
+     usage
+     ;;
+@@ -201,6 +206,7 @@ define debugglibc
+ SOURCE_DIR="$(CURDIR)"
+ BUILD_DIR="$(common-objpfx)"
+ CMD_FILE="$(common-objpfx)debugglibc.gdb"
++CONTAINER=false
+ DIRECT=true
+ SYMBOLSFILE=true
+ unset TESTCASE
+@@ -234,6 +240,9 @@ Options:
+ 
+   The following options do not take arguments:
+ 
++  -c, --in-container
++	Run the test case inside a container and automatically attach
++	GDB to it.
+   -i, --no-direct
+ 	Selects whether to pass the --direct flag to the program.
+ 	--direct is useful when debugging glibc test cases. It inhibits the
+@@ -262,6 +271,9 @@ do
+       ENVVARS="$$2 $$ENVVARS"
+       shift
+       ;;
++    -c|--in-container)
++      CONTAINER=true
++      ;;
+     -i|--no-direct)
+       DIRECT=false
+       ;;
+@@ -347,6 +359,13 @@ echo "GDB Commands     : $$CMD_FILE"
+ echo "Env vars         : $$ENVVARS"
+ echo
+ 
++if [ "$$CONTAINER" == true ]
++then
++# Use testrun.sh to start the test case with WAIT_FOR_DEBUGGER=1, then
++# automatically attach GDB to it.
++WAIT_FOR_DEBUGGER=1 $(common-objpfx)testrun.sh --tool=container $${TESTCASE} &
++gdb -x $${TESTCASE}.gdb
++else
+ # Start the test case debugging in two steps:
+ #   1. the following command invokes gdb to run the loader;
+ #   2. the commands file tells the loader to run the test case.
+@@ -354,6 +373,7 @@ gdb -q \
+   -x $${CMD_FILE} \
+   -d $${SOURCE_DIR} \
+   $${BUILD_DIR}/elf/ld.so
++fi
+ endef
+ 
+ # This is another handy script for debugging dynamically linked program
+-- 
+2.20.1
+

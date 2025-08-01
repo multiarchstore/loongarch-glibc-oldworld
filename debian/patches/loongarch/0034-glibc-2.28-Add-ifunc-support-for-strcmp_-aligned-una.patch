@@ -1,0 +1,867 @@
+From d09c9893dca3fb69662f397c978a3ed77ba3799c Mon Sep 17 00:00:00 2001
+From: caiyinyu <caiyinyu@loongson.cn>
+Date: Sun, 19 Feb 2023 15:01:34 +0800
+Subject: [PATCH 34/44] glibc-2.28: Add ifunc support for
+ strcmp_{aligned,unaligned,lsx}
+
+Change-Id: I78aa98c3f3a6f35d62bae991800ca9bdf30f409c
+---
+ sysdeps/loongarch/lp64/multiarch/Makefile     |   3 +-
+ .../lp64/multiarch/ifunc-impl-list.c          |   6 +
+ .../loongarch/lp64/multiarch/strcmp-aligned.S |   8 +
+ sysdeps/loongarch/lp64/multiarch/strcmp-lsx.S | 148 +++++++
+ .../lp64/multiarch/strcmp-unaligned.S         | 191 +++++++++
+ sysdeps/loongarch/lp64/multiarch/strcmp.c     |  35 ++
+ sysdeps/loongarch/lp64/strcmp.S               | 381 ++++++++++--------
+ 7 files changed, 596 insertions(+), 176 deletions(-)
+ create mode 100644 sysdeps/loongarch/lp64/multiarch/strcmp-aligned.S
+ create mode 100644 sysdeps/loongarch/lp64/multiarch/strcmp-lsx.S
+ create mode 100644 sysdeps/loongarch/lp64/multiarch/strcmp-unaligned.S
+ create mode 100644 sysdeps/loongarch/lp64/multiarch/strcmp.c
+
+diff --git a/sysdeps/loongarch/lp64/multiarch/Makefile b/sysdeps/loongarch/lp64/multiarch/Makefile
+index 25926ae0b1..460db81f22 100644
+--- a/sysdeps/loongarch/lp64/multiarch/Makefile
++++ b/sysdeps/loongarch/lp64/multiarch/Makefile
+@@ -13,5 +13,6 @@ sysdep_routines += memcpy-aligned memcpy-unaligned memcpy-lasx \
+ 		   strchrnul-aligned strchrnul-unaligned strchrnul-lsx \
+ 		   strncmp-aligned strncmp-unaligned strncmp-lsx \
+ 		   strcpy-aligned strcpy-unaligned strcpy-lsx \
+-		   stpcpy-aligned stpcpy-lsx
++		   stpcpy-aligned stpcpy-lsx \
++		   strcmp-aligned strcmp-unaligned strcmp-lsx
+ endif
+diff --git a/sysdeps/loongarch/lp64/multiarch/ifunc-impl-list.c b/sysdeps/loongarch/lp64/multiarch/ifunc-impl-list.c
+index 599718056c..b1dbe7f4b5 100644
+--- a/sysdeps/loongarch/lp64/multiarch/ifunc-impl-list.c
++++ b/sysdeps/loongarch/lp64/multiarch/ifunc-impl-list.c
+@@ -121,6 +121,12 @@ __libc_ifunc_impl_list (const char *name, struct libc_ifunc_impl *array,
+ 	      IFUNC_IMPL_ADD (array, i, stpcpy, 1, __stpcpy_aligned)
+ 	      )
+ 
++  IFUNC_IMPL (i, name, strcmp,
++	      IFUNC_IMPL_ADD (array, i, strcmp, 1, __strcmp_lsx)
++	      IFUNC_IMPL_ADD (array, i, strcmp, 1, __strcmp_aligned)
++	      IFUNC_IMPL_ADD (array, i, strcmp, 1, __strcmp_unaligned)
++	      )
++
+   return i;
+ }
+ 
+diff --git a/sysdeps/loongarch/lp64/multiarch/strcmp-aligned.S b/sysdeps/loongarch/lp64/multiarch/strcmp-aligned.S
+new file mode 100644
+index 0000000000..f84f52b8bd
+--- /dev/null
++++ b/sysdeps/loongarch/lp64/multiarch/strcmp-aligned.S
+@@ -0,0 +1,8 @@
++
++#if IS_IN (libc)
++
++#define STRCMP_NAME __strcmp_aligned
++
++#endif
++
++#include "../strcmp.S"
+diff --git a/sysdeps/loongarch/lp64/multiarch/strcmp-lsx.S b/sysdeps/loongarch/lp64/multiarch/strcmp-lsx.S
+new file mode 100644
+index 0000000000..cf8c3351c5
+--- /dev/null
++++ b/sysdeps/loongarch/lp64/multiarch/strcmp-lsx.S
+@@ -0,0 +1,148 @@
++#ifdef _LIBC
++#include <sysdep.h>
++#include <sys/regdef.h>
++#include <sys/asm.h>
++#else
++#include <sys/asm.h>
++#include <sys/regdef.h>
++#endif
++
++#if IS_IN (libc)
++
++#define STRCMP_NAME __strcmp_lsx
++
++/* int strcmp (const char *s1, const char *s2); */
++L(magic_num):
++    .align          6
++    .dword          0x0706050403020100
++    .dword          0x0f0e0d0c0b0a0908
++
++    nop
++    nop
++    nop
++    nop
++ENTRY_NO_ALIGN(STRCMP_NAME)
++    pcaddi          t0, -8
++    andi            a2, a0, 0xf
++    vld             $vr2, t0, 0
++    andi            a3, a1, 0xf
++
++    bne             a2, a3, L(unaligned)
++    bstrins.d       a0, zero, 3, 0
++    bstrins.d       a1, zero, 3, 0
++    vld             $vr0, a0, 0
++
++
++    vld             $vr1, a1, 0
++    vreplgr2vr.b    $vr3, a2
++    vslt.b          $vr2, $vr2, $vr3
++    vseq.b          $vr3, $vr0, $vr1
++
++    vmin.bu         $vr3, $vr0, $vr3
++    vor.v           $vr3, $vr3, $vr2
++    vsetanyeqz.b    $fcc0, $vr3
++    bcnez           $fcc0, L(al_out)
++
++L(al_loop):
++    vld             $vr0, a0, 16
++    vld             $vr1, a1, 16
++    addi.d          a0, a0, 16
++    addi.d          a1, a1, 16
++
++    vseq.b          $vr3, $vr0, $vr1
++    vmin.bu         $vr3, $vr0, $vr3
++    vsetanyeqz.b    $fcc0, $vr3
++    bceqz           $fcc0, L(al_loop)
++
++
++L(al_out):
++    vseqi.b         $vr3, $vr3, 0
++    vfrstpi.b       $vr3, $vr3, 0
++    vshuf.b         $vr0, $vr0, $vr0, $vr3
++    vshuf.b         $vr1, $vr1, $vr1, $vr3
++
++    vpickve2gr.bu   t0, $vr0, 0
++    vpickve2gr.bu   t1, $vr1, 0
++    sub.d           a0, t0, t1
++    jr              ra
++
++L(unaligned):
++    slt             a4, a2, a3
++    xor             t0, a0, a1
++    maskeqz         t0, t0, a4
++    xor             a0, a0, t0   # a0 hold the larger one
++
++    xor             a1, a1, t0   # a1 hold the small one
++    andi            a2, a0, 0xf
++    andi            a3, a1, 0xf
++    bstrins.d       a0, zero, 3, 0
++
++
++    bstrins.d       a1, zero, 3, 0
++    vld             $vr0, a0, 0
++    vld             $vr3, a1, 0
++    vreplgr2vr.b    $vr4, a2
++
++    vreplgr2vr.b    $vr5, a3
++    vslt.b          $vr7, $vr2, $vr4
++    vsub.b          $vr4, $vr4, $vr5
++    vaddi.bu        $vr6, $vr2, 16
++
++    vsub.b          $vr6, $vr6, $vr4
++    vshuf.b         $vr1, $vr3, $vr3, $vr6
++    vseq.b          $vr4, $vr0, $vr1
++    vmin.bu         $vr4, $vr0, $vr4
++
++    vor.v           $vr4, $vr4, $vr7
++    vsetanyeqz.b    $fcc0, $vr4
++    bcnez           $fcc0, L(un_end)
++    vslt.b          $vr5, $vr2, $vr5
++
++
++    vor.v           $vr3, $vr3, $vr5
++L(un_loop):
++    vld             $vr0, a0, 16
++    vsetanyeqz.b    $fcc0, $vr3
++    bcnez           $fcc0, L(remaining_end)
++
++    vor.v           $vr1, $vr3, $vr3
++    vld             $vr3, a1, 16
++    addi.d          a0, a0, 16
++    addi.d          a1, a1, 16
++
++    vshuf.b         $vr1, $vr3, $vr1, $vr6
++    vseq.b          $vr4, $vr0, $vr1
++    vmin.bu         $vr4, $vr0, $vr4
++    vsetanyeqz.b    $fcc0, $vr4
++
++    bceqz           $fcc0, L(un_loop)
++L(un_end):
++    vseqi.b         $vr4, $vr4, 0
++    vfrstpi.b       $vr4, $vr4, 0
++    vshuf.b         $vr0, $vr0, $vr0, $vr4
++
++
++    vshuf.b         $vr1, $vr1, $vr1, $vr4
++    vpickve2gr.bu   t0, $vr0, 0
++    vpickve2gr.bu   t1, $vr1, 0
++    sub.d           t3, t0, t1
++
++    sub.d           t4, t1, t0
++    masknez         t0, t3, a4
++    maskeqz         t1, t4, a4
++    or              a0, t0, t1
++
++    jr              ra
++L(remaining_end):
++    vshuf.b         $vr1, $vr3, $vr3, $vr6
++    vseq.b          $vr4, $vr0, $vr1
++    vmin.bu         $vr4, $vr4, $vr0
++
++    b               L(un_end)
++END(STRCMP_NAME)
++
++#ifdef _LIBC
++libc_hidden_builtin_def (STRCMP_NAME)
++#endif
++
++#endif
+diff --git a/sysdeps/loongarch/lp64/multiarch/strcmp-unaligned.S b/sysdeps/loongarch/lp64/multiarch/strcmp-unaligned.S
+new file mode 100644
+index 0000000000..e29d872f70
+--- /dev/null
++++ b/sysdeps/loongarch/lp64/multiarch/strcmp-unaligned.S
+@@ -0,0 +1,191 @@
++/* Copyright 2016 Loongson Technology Corporation Limited  */
++
++/* Author: songyuekun songyuekun@loongson.cn */
++
++/*
++ * ISA: MIPS64R2
++ * ABI: N64
++ */
++
++/* basic algorithm :
++	+. let t0, t1 point to a0, a1, if a0 has smaller low 3 bit of a0 and a1,
++		set a4 to 1 and let t0 point to the larger of lower 3bit of a0 and a1
++	+. if low 3 bit of a0 equal low 3 bit of a0, use a ldr one time and more ld other times;
++	+. if not,  load partial t2 and t3, check if t2 has \0;
++	+. then use use ld for t0, ldr for t1,
++	+. if partial 8 byte  from t1 has \0, compare partial 8 byte from t1 with 8
++		byte from t0 with a mask in a7
++	+. if not, ldl other part of t1, compare  8 byte from t1 with 8 byte from t0
++	+. if (v0 - 0x0101010101010101) & (~v0) & 0x8080808080808080 != 0, v0 has
++		one byte is \0, else has no \0
++	+. for partial 8 byte from ldr t3, 0(a0), preload t3 with 0xffffffffffffffff
++*/
++
++#ifdef _LIBC
++#include <sysdep.h>
++#include <sys/regdef.h>
++#include <sys/asm.h>
++#else
++#include <sys/asm.h>
++#include <sys/regdef.h>
++#endif
++
++
++#if IS_IN (libc)
++
++
++#define STRCMP_NAME __strcmp_unaligned
++
++#define REP8_01 0x0101010101010101
++#define REP8_7f 0x7f7f7f7f7f7f7f7f
++#define REP8_80 0x8080808080808080
++
++/* Parameters and Results */
++#define src1	a0
++#define	src2	a1
++#define result	v0
++// Note: v0 = a0 in N64 ABI
++
++
++/* Internal variable */
++#define data1		t0
++#define	data2		t1
++#define	has_nul		t2
++#define	diff		t3
++#define syndrome	t4
++#define zeroones	t5
++#define	sevenf		t6
++#define pos		t7
++#define exchange	t8
++#define tmp1		a4
++#define	tmp2		a5
++#define	tmp3		a6
++#define src1_off    	a2
++#define src2_off    	a3
++#define tmp4        	a7
++
++/* rd <- if rc then ra else rb
++    will destroy tmp3.  */
++#define CONDITIONSEL(rd,rc,ra,rb)\
++        masknez tmp3, rb, rc;\
++        maskeqz rd,   ra, rc;\
++        or      rd,   rd, tmp3
++
++/* int strcmp (const char *s1, const char *s2); */
++
++LEAF(STRCMP_NAME)
++	.align		4
++
++	xor		tmp1, src1, src2
++    	lu12i.w     	zeroones, 0x01010
++    	lu12i.w     	sevenf, 0x7f7f7
++    	andi        	src1_off, src1, 0x7
++    	ori         	zeroones, zeroones, 0x101
++    	ori         	sevenf, sevenf, 0xf7f
++	andi		tmp1, tmp1, 0x7
++    	bstrins.d   	zeroones, zeroones, 63, 32
++    	bstrins.d   	sevenf, sevenf, 63, 32
++	bnez		tmp1, strcmp_misaligned8
++	bnez		src1_off, strcmp_mutual_align
++strcmp_loop_aligned:
++	ld.d		data1, src1, 0
++    	addi.d      	src1, src1, 8
++	ld.d		data2, src2, 0
++    	addi.d      	src2, src2, 8
++strcmp_start_realigned:
++	sub.d		tmp1, data1, zeroones
++	or		tmp2, data1, sevenf
++	xor		diff, data1, data2
++	andn		has_nul, tmp1, tmp2
++	or		syndrome, diff, has_nul
++	beqz		syndrome, strcmp_loop_aligned
++
++strcmp_end:
++	ctz.d		pos, syndrome
++	bstrins.d   	pos, zero, 2, 0
++	srl.d		data1, data1, pos
++	srl.d		data2, data2, pos
++	andi		data1, data1, 0xff
++	andi		data2, data2, 0xff
++	sub.d		result, data1, data2
++	jr ra
++strcmp_mutual_align:
++    	bstrins.d   	src1, zero, 2, 0
++    	bstrins.d   	src2, zero, 2, 0
++	slli.d		tmp1, src1_off,  0x3
++	ld.d		data1, src1, 0
++	sub.d		tmp1, zero, tmp1
++	ld.d		data2, src2, 0
++    	addi.d      	src1, src1, 8
++    	addi.d      	src2, src2, 8
++	nor		tmp2, zero, zero
++	srl.d		tmp2, tmp2, tmp1
++	or		data1, data1, tmp2
++	or		data2, data2, tmp2
++	b		strcmp_start_realigned
++
++strcmp_misaligned8:
++
++/* check if ((src1 != 0) && ((src2 == 0 ) || (src1 < src2)))
++    then exchange(src1,src2).  */
++    	andi        	src2_off, src2, 0x7
++    	slt         	tmp2, src1_off, src2_off
++    	CONDITIONSEL(tmp2,src2_off,tmp2,tmp1)
++    	maskeqz     	exchange, tmp2, src1_off
++    	xor         	tmp3, src1, src2
++    	maskeqz     	tmp3, tmp3, exchange
++    	xor         	src1, src1, tmp3
++    	xor         	src2, src2, tmp3
++
++	andi		src1_off, src1, 0x7
++	beqz		src1_off, strcmp_loop_misaligned
++strcmp_do_misaligned:
++	ld.bu		data1, src1, 0
++	ld.bu		data2, src2, 0
++	xor         	tmp3, data1, data2
++	addi.d		src1, src1, 1
++    	masknez     	tmp3, data1, tmp3
++	addi.d		src2, src2, 1
++    	beqz        	tmp3, strcmp_done
++	andi		src1_off, src1, 0x7
++	bnez		src1_off, strcmp_do_misaligned
++
++strcmp_loop_misaligned:
++	andi		tmp1, src2, 0xff8
++	xori		tmp1, tmp1, 0xff8
++	beqz		tmp1, strcmp_do_misaligned
++	ld.d		data1, src1, 0
++	ld.d		data2, src2, 0
++	addi.d		src1, src1, 8
++	addi.d		src2, src2, 8
++
++	sub.d		tmp1, data1, zeroones
++	or		tmp2, data1, sevenf
++	xor		diff, data1, data2
++	andn		has_nul, tmp1, tmp2
++	or		syndrome, diff, has_nul
++	beqz		syndrome, strcmp_loop_misaligned
++strcmp_misalign_end:
++	ctz.d		pos, syndrome
++    	bstrins.d	pos, zero, 2, 0
++	srl.d		data1, data1, pos
++	srl.d		data2, data2, pos
++	andi		data1, data1, 0xff
++	andi		data2, data2, 0xff
++	sub.d		tmp1, data1, data2
++	sub.d		tmp2, data2, data1
++    	CONDITIONSEL(result,exchange,tmp2,tmp1)
++	jr ra
++
++strcmp_done:
++	sub.d		tmp1, data1, data2
++	sub.d		tmp2, data2, data1
++    	CONDITIONSEL(result,exchange,tmp2,tmp1)
++	jr		ra
++END(STRCMP_NAME)
++
++#ifdef _LIBC
++libc_hidden_builtin_def (STRCMP_NAME)
++#endif
++
++#endif
+diff --git a/sysdeps/loongarch/lp64/multiarch/strcmp.c b/sysdeps/loongarch/lp64/multiarch/strcmp.c
+new file mode 100644
+index 0000000000..5a972823c5
+--- /dev/null
++++ b/sysdeps/loongarch/lp64/multiarch/strcmp.c
+@@ -0,0 +1,35 @@
++/* Multiple versions of strcmp.
++   All versions must be listed in ifunc-impl-list.c.
++   Copyright (C) 2017-2018 Free Software Foundation, Inc.
++   This file is part of the GNU C Library.
++
++   The GNU C Library is free software; you can redistribute it and/or
++   modify it under the terms of the GNU Lesser General Public
++   License as published by the Free Software Foundation; either
++   version 2.1 of the License, or (at your option) any later version.
++
++   The GNU C Library is distributed in the hope that it will be useful,
++   but WITHOUT ANY WARRANTY; without even the implied warranty of
++   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++   Lesser General Public License for more details.
++
++   You should have received a copy of the GNU Lesser General Public
++   License along with the GNU C Library; if not, see
++   <http://www.gnu.org/licenses/>.  */
++
++/* Define multiple versions only for the definition in libc.  */
++#if IS_IN (libc)
++# define strcmp __redirect_strcmp
++# include <string.h>
++# undef strcmp
++
++# define SYMBOL_NAME strcmp
++#include <ifunc-strchr.h>
++
++libc_ifunc_redirected (__redirect_strcmp, strcmp, IFUNC_SELECTOR ());
++
++# ifdef SHARED
++__hidden_ver1 (strcmp, __GI_strcmp, __redirect_strcmp)
++  __attribute__ ((visibility ("hidden")));
++# endif
++#endif
+diff --git a/sysdeps/loongarch/lp64/strcmp.S b/sysdeps/loongarch/lp64/strcmp.S
+index 11474bf2d0..22c261a371 100644
+--- a/sysdeps/loongarch/lp64/strcmp.S
++++ b/sysdeps/loongarch/lp64/strcmp.S
+@@ -1,197 +1,228 @@
+-/* Copyright 2016 Loongson Technology Corporation Limited  */
++/* 2022\06\15  loongarch64 author: chenxiaolong.  */
+ 
+-/* Author: songyuekun songyuekun@loongson.cn */
+-
+-/*
+- * ISA: MIPS64R2
+- * ABI: N64
+- */
+-
+-/* basic algorithm :
+-
+-	+.	let t0, t1 point to a0, a1, if a0 has smaller low 3 bit of a0 and a1,
+-		set a4 to 1 and let t0 point to the larger of lower 3bit of a0 and a1
+-
+-	+.	if low 3 bit of a0 equal low 3 bit of a0, use a ldr one time and more ld other times;
+-
+-	+.	if not,  load partial t2 and t3, check if t2 has \0;
+-
+-	+.	then use use ld for t0, ldr for t1,
+-
+-	+.	if partial 8 byte  from t1 has \0, compare partial 8 byte from t1 with 8
+-		byte from t0 with a mask in a7
+-
+-	+.	if not, ldl other part of t1, compare  8 byte from t1 with 8 byte from t0
+-
+-	+.	if (v0 - 0x0101010101010101) & (~v0) & 0x8080808080808080 != 0, v0 has
+-		one byte is \0, else has no \0
+-
+-	+.	for partial 8 byte from ldr t3, 0(a0), preload t3 with 0xffffffffffffffff
+-
+-
+-*/
++#ifdef _LIBC
++#include <sysdep.h>
++#include <sys/regdef.h>
++#include <sys/asm.h>
++#else
+ #include <sys/asm.h>
+ #include <sys/regdef.h>
++#endif
+ 
++#ifndef STRCMP_NAME
++#define STRCMP_NAME strcmp
++#endif
+ 
+-#define STRCMP	strcmp
+-
+-#define REP8_01 0x0101010101010101
+-#define REP8_7f 0x7f7f7f7f7f7f7f7f
+-#define REP8_80 0x8080808080808080
++/* int strcmp (const char *s1, const char *s2); */
+ 
+ /* Parameters and Results */
+ #define src1	a0
+ #define	src2	a1
+ #define result	v0
+-// Note: v0 = a0 in N64 ABI
+-
+-
+-/* Internal variable */
+-#define data1		t0
+-#define	data2		t1
+-#define	has_nul		t2
+-#define	diff		t3
+-#define syndrome	t4
+-#define zeroones	t5
+-#define	sevenf		t6
+-#define pos		t7
+-#define exchange	t8
+-#define tmp1		a4
+-#define	tmp2		a5
+-#define	tmp3		a6
+-#define src1_off    a2
+-#define src2_off    a3
+-#define tmp4        a7
+-
+-/* rd <- if rc then ra else rb
+-    will destroy tmp3
+-*/
+-#define CONDITIONSEL(rd,rc,ra,rb)\
+-        masknez tmp3, rb, rc;\
+-        maskeqz rd,   ra, rc;\
+-        or      rd,   rd, tmp3
++LEAF(STRCMP_NAME)
++    .align	6
++    xor         a4, src1, src2
++    lu12i.w     t5, 0x01010
++    lu12i.w     t6, 0x7f7f7
++    andi        a2, src1, 0x7
++
++    ori         t5, t5, 0x101
++    andi        a4, a4, 0x7
++    ori         t6, t6, 0xf7f
++    bstrins.d   t5, t5, 63, 32
++    bstrins.d   t6, t6, 63, 32
++
++    bnez        a4, 3f  // unaligned
++    beqz        a2, 1f  // loop aligned
++
++// mutual aligned
++    bstrins.d   src1, zero, 2, 0
++    bstrins.d   src2, zero, 2, 0
++    slli.d      a4, a2, 0x3
++    ld.d        t0, src1, 0
+ 
++    sub.d       a4, zero, a4
++    ld.d        t1, src2, 0
++    addi.d      src1, src1, 8
++    addi.d      src2, src2, 8
+ 
++    nor         a5, zero, zero
++    srl.d       a5, a5, a4
++    or          t0, t0, a5
+ 
+-/* int strcmp (const char *s1, const char *s2); */
++    or          t1, t1, a5
++    b           2f  //start realigned
+ 
+-LEAF(STRCMP)
+-	.align		4
+-
+-	xor		tmp1, src1, src2
+-    lu12i.w     zeroones, 0x01010
+-    lu12i.w     sevenf, 0x7f7f7
+-    andi        src1_off, src1, 0x7
+-    ori         zeroones, zeroones, 0x101
+-    ori         sevenf, sevenf, 0xf7f
+-	andi		tmp1, tmp1, 0x7
+-    bstrins.d   zeroones, zeroones, 63, 32
+-    bstrins.d   sevenf, sevenf, 63, 32
+-	bnez		tmp1, strcmp_misaligned8
+-	bnez		src1_off, strcmp_mutual_align
+-strcmp_loop_aligned:
+-	ld.d		data1, src1, 0
++// loop aligned
++1:
++    ld.d        t0, src1, 0
+     addi.d      src1, src1, 8
+-	ld.d		data2, src2, 0
++    ld.d        t1, src2, 0
+     addi.d      src2, src2, 8
+-strcmp_start_realigned:
+-	sub.d		tmp1, data1, zeroones
+-	or		tmp2, data1, sevenf
+-	xor		diff, data1, data2
+-	andn		has_nul, tmp1, tmp2
+-	or		syndrome, diff, has_nul
+-	beqz		syndrome, strcmp_loop_aligned
+-
+-strcmp_end:
+-	ctz.d		pos, syndrome
+-    bstrins.d   pos, zero, 2, 0
+-	srl.d		data1, data1, pos
+-	srl.d		data2, data2, pos
+-	andi		data1, data1, 0xff
+-	andi		data2, data2, 0xff
+-	sub.d		result, data1, data2
+-	jr ra
+-strcmp_mutual_align:
++
++// start realigned:
++2:
++    sub.d       t2, t0, t5
++    nor         t3, t0, t6
++    and         t2, t2, t3
++
++    xor         t3, t0, t1
++    or          t2, t2, t3
++    beqz        t2, 1b
++
++    ctz.d       t7, t2
++    bstrins.d   t7, zero, 2, 0
++    srl.d       t0, t0, t7
++    srl.d       t1, t1, t7
++
++    andi        t0, t0, 0xff
++    andi        t1, t1, 0xff
++    sub.d       v0, t0, t1
++    jr          ra
++
++// unaligned
++3:
++    andi        a3, src2, 0x7
++    slt         a5, a2, a3
++    masknez     t8, a2, a5
++    xor         a6, src1, src2
++    maskeqz     a6, a6, t8
++    xor         src1, src1, a6
++    xor         src2, src2, a6
++
++    andi        a2, src1, 0x7
++    beqz        a2, 4f // src1 is aligned
++
++//strcmp_unaligned:
++    andi        a3, src2, 0x7
+     bstrins.d   src1, zero, 2, 0
+     bstrins.d   src2, zero, 2, 0
+-	slli.d		tmp1, src1_off,  0x3
+-	ld.d		data1, src1, 0
+-	sub.d		tmp1, zero, tmp1
+-	ld.d		data2, src2, 0
++    nor         t3, zero, zero
++
++    ld.d        t0, src1, 0
++    ld.d        t1, src2, 0
++    sub.d       a2, a3, a2
++    addi.d      t2, zero, 8
++
++    sub.d       a5, t2, a2
++    sub.d       a6, t2, a3
++    slli.d      a5, a5, 0x3
++    slli.d      a6, a6, 0x3
++
++    srl.d       t4, t3, a6
++    srl.d       a4, t3, a5
++    rotr.d      a7, t0, a5
++
++    addi.d      src2, src2, 8
++    addi.d      src1, src1, 8
++    or          t1, t1, t4
++    or          t0, a7, t4
++
++    sub.d       t2, t0, t5
++    nor         t3, t0, t6
++    and         t2, t2, t3
++    xor         t3, t0, t1
++    or          t2, t2, t3
++    bnez        t2, 7f
++
++    and         a7, a7, a4
++    slli.d      a6, a2, 0x3
++    nor         a4, zero, a4
++    b           5f
++
++// src1 is aligned
++4:
++    andi        a3, src2, 0x7
++    ld.d        t0, src1, 0
++
++    bstrins.d   src2, zero, 2, 0
++    nor         t2, zero, zero
++    ld.d        t1, src2, 0
++
++    addi.d      t3, zero, 0x8
++    sub.d       a5, t3, a3
++    slli.d      a5, a5, 0x3
++    srl.d       a4, t2, a5
++    rotr.d      t4, t0, a5
++
++    addi.d      src2, src2, 8
+     addi.d      src1, src1, 8
++    or          t1, t1, a4
++    or          t0, t4, a4
++
++    sub.d       t2, t0, t5
++    nor         t3, t0, t6
++    and         t2, t2, t3
++    xor         t3, t0, t1
++    or          t2, t2, t3
++
++    bnez        t2, 7f
++
++    and         a7, t4, a4
++    slli.d      a6, a3, 0x3
++    nor         a4, zero, a4
++
++// unaligned loop
++// a7: remaining number
++// a6: shift left number
++// a5: shift right number
++// a4: mask for checking remaining number
++5:
++    or          t0, a7, a4
++    sub.d       t2, t0, t5
++    nor         t3, t0, t6
++    and         t2, t2, t3
++    bnez        t2, 6f
++
++    ld.d        t0, src1, 0
++    addi.d      src1, src1, 8
++    ld.d        t1, src2, 0
+     addi.d      src2, src2, 8
+-	nor		tmp2, zero, zero
+-	srl.d		tmp2, tmp2, tmp1
+-	or		data1, data1, tmp2
+-	or		data2, data2, tmp2
+-	b		strcmp_start_realigned
+-
+-strcmp_misaligned8:
+-
+-/* check
+-    if ((src1 != 0) && ((src2 == 0 ) || (src1 < src2)))
+-    then exchange(src1,src2)
+-
+-*/
+-    andi        src2_off, src2, 0x7
+-    slt         tmp2, src1_off, src2_off
+-    CONDITIONSEL(tmp2,src2_off,tmp2,tmp1)
+-    maskeqz     exchange, tmp2, src1_off
+-    xor         tmp3, src1, src2
+-    maskeqz     tmp3, tmp3, exchange
+-    xor         src1, src1, tmp3
+-    xor         src2, src2, tmp3
+-
+-	andi		src1_off, src1, 0x7
+-	beqz		src1_off, strcmp_loop_misaligned
+-strcmp_do_misaligned:
+-	ld.bu		data1, src1, 0
+-	ld.bu		data2, src2, 0
+-    xor         tmp3, data1, data2
+-	addi.d		src1, src1, 1
+-    masknez     tmp3, data1, tmp3
+-	addi.d		src2, src2, 1
+-    beqz        tmp3, strcmp_done
+-	andi		src1_off, src1, 0x7
+-	bnez		src1_off, strcmp_do_misaligned
+-
+-strcmp_loop_misaligned:
+-	andi		tmp1, src2, 0xff8
+-	xori		tmp1, tmp1, 0xff8
+-	beqz		tmp1, strcmp_do_misaligned
+-	ld.d		data1, src1, 0
+-	ld.d		data2, src2, 0
+-	addi.d		src1, src1, 8
+-	addi.d		src2, src2, 8
+-
+-	sub.d		tmp1, data1, zeroones
+-	or		tmp2, data1, sevenf
+-	xor		diff, data1, data2
+-	andn		has_nul, tmp1, tmp2
+-	or		syndrome, diff, has_nul
+-	beqz		syndrome, strcmp_loop_misaligned
+-//	b		strcmp_end
+-strcmp_misalign_end:
+-	ctz.d		pos, syndrome
+-    bstrins.d   pos, zero, 2, 0
+-	srl.d		data1, data1, pos
+-	srl.d		data2, data2, pos
+-	andi		data1, data1, 0xff
+-	andi		data2, data2, 0xff
+-	sub.d		tmp1, data1, data2
+-	sub.d		tmp2, data2, data1
+-    CONDITIONSEL(result,exchange,tmp2,tmp1)
+-	jr ra
+-
+-strcmp_done:
+-	sub.d	    tmp1, data1, data2
+-	sub.d		tmp2, data2, data1
+-    CONDITIONSEL(result,exchange,tmp2,tmp1)
+-	jr	ra
+-END(STRCMP)
+-#ifndef ANDROID_CHANGES
++
++    srl.d       t7, t0, a5
++    sll.d       t0, t0, a6
++    or          t0, a7, t0
++
++    sub.d       t2, t0, t5
++    nor         t3, t0, t6
++    and         t2, t2, t3
++    xor         t3, t0, t1
++    or          t2, t2, t3
++    bnez        t2, 7f
++
++    or          a7, t7, zero
++    b           5b
++
++6:
++    ld.bu       t1, src2, 0
++    andi        t0, a7, 0xff
++    xor         t2, t0, t1
++    srli.d      a7, a7, 0x8
++    masknez     t2, t0, t2
++    addi.d      src2, src2, 1
++    beqz        t2, 8f
++    b           6b
++
++7:
++    ctz.d       t7, t2
++    bstrins.d   t7, zero, 2, 0
++    srl.d       t0, t0, t7
++    srl.d       t1, t1, t7
++
++    andi        t0, t0, 0xff
++    andi        t1, t1, 0xff
++
++8:
++    sub.d       a4, t0, t1
++    sub.d       a5, t1, t0
++    maskeqz     a6, a5, t8
++    masknez     result, a4, t8
++    or          result, result, a6
++    jr	ra
++
++END(STRCMP_NAME)
++
+ #ifdef _LIBC
+-libc_hidden_builtin_def (strcmp)
+-#endif
++libc_hidden_builtin_def (STRCMP_NAME)
+ #endif
++
+-- 
+2.20.1
+

@@ -1,0 +1,31 @@
+From 27b6ba49f125444b2195727f6bba9960c6ce42e0 Mon Sep 17 00:00:00 2001
+From: Arjun Shankar <arjun@redhat.com>
+Date: Tue, 5 Nov 2019 16:41:25 +0100
+Subject: [PATCH 08/11] Fix run-one-test so that it runs elf tests
+
+The `test' make target passes a trailing slash in the subdir argument.  This
+does not play well with elf/rtld-Rules which looks for `elf' without any
+trailing slash, and therefore doesn't find a match when running an elf test
+individually.  This commit removes the trailing slash from the invocation.
+
+Reviewed-by: DJ Delorie <dj@redhat.com>
+Change-Id: Iba1d885eba047133593c6c5e2115f099cced5a0b
+---
+ Makefile | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/Makefile b/Makefile
+index 28911701a0..a7f64d7137 100644
+--- a/Makefile
++++ b/Makefile
+@@ -449,6 +449,6 @@ iconvdata/% localedata/% po/%: FORCE
+ .PHONY: test
+ test :
+ 	@-rm -f $(objpfx)$t.out
+-	$(MAKE) subdir=$(dir $t) -C $(dir $t) ..=../ $(objpfx)$t.out
++	$(MAKE) subdir=$(patsubst %/,%,$(dir $t)) -C $(dir $t) ..=../ $(objpfx)$t.out
+ 	@cat $(objpfx)$t.test-result
+ 	@cat $(objpfx)$t.out
+-- 
+2.40.1
+

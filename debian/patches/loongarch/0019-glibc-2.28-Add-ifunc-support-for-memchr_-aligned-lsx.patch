@@ -1,0 +1,340 @@
+From 74e641c054e4c53188827c9ebe25605666ea3944 Mon Sep 17 00:00:00 2001
+From: caiyinyu <caiyinyu@loongson.cn>
+Date: Wed, 15 Feb 2023 16:13:32 +0800
+Subject: [PATCH 19/44] glibc-2.28: Add ifunc support for memchr_{aligned,lsx}.
+
+Change-Id: I7491cf61cf9cbddf3cdef65e5eebd0c5a50331d3
+---
+ sysdeps/loongarch/lp64/memchr.S               | 99 +++++++++++++++++++
+ sysdeps/loongarch/lp64/multiarch/Makefile     |  3 +-
+ .../lp64/multiarch/ifunc-impl-list.c          |  5 +
+ .../loongarch/lp64/multiarch/ifunc-memchr.h   | 34 +++++++
+ .../loongarch/lp64/multiarch/memchr-aligned.S |  7 ++
+ sysdeps/loongarch/lp64/multiarch/memchr-lsx.S | 79 +++++++++++++++
+ sysdeps/loongarch/lp64/multiarch/memchr.c     | 39 ++++++++
+ 7 files changed, 265 insertions(+), 1 deletion(-)
+ create mode 100644 sysdeps/loongarch/lp64/memchr.S
+ create mode 100644 sysdeps/loongarch/lp64/multiarch/ifunc-memchr.h
+ create mode 100644 sysdeps/loongarch/lp64/multiarch/memchr-aligned.S
+ create mode 100644 sysdeps/loongarch/lp64/multiarch/memchr-lsx.S
+ create mode 100644 sysdeps/loongarch/lp64/multiarch/memchr.c
+
+diff --git a/sysdeps/loongarch/lp64/memchr.S b/sysdeps/loongarch/lp64/memchr.S
+new file mode 100644
+index 0000000000..ec34b1af89
+--- /dev/null
++++ b/sysdeps/loongarch/lp64/memchr.S
+@@ -0,0 +1,99 @@
++#ifdef _LIBC
++#include <sysdep.h>
++#include <sys/regdef.h>
++#include <sys/asm.h>
++#else
++#include <sys/asm.h>
++#include <sys/regdef.h>
++#endif
++
++#ifndef MEMCHR_NAME
++#define MEMCHR_NAME memchr
++#endif
++
++#ifdef ANDROID_CHANGES
++LEAF(MEMCHR_NAME, 0)
++#else
++LEAF(MEMCHR_NAME)
++#endif
++    .align      6
++    beqz        a2, L(out)
++    andi        t1, a0, 0x7
++    lu12i.w     a3, 0x01010
++    sub.d       a5, a0, t1
++
++    bstrins.d   a1, a1, 15, 8
++    ld.d        t0, a5, 0
++    slli.d      t2, t1, 3
++    ori         a3, a3, 0x101
++
++    bstrins.d   a1, a1, 31, 16
++    li.w        t7, -1
++    li.w        t8, 9
++    bstrins.d   a3, a3, 63, 32
++
++    srl.d       t3, t7, t2
++    bstrins.d   a1, a1, 63, 32
++    sub.d       t4, t8, t1
++    orn         t3, a1, t3
++
++    srl.d       t0, t0, t2
++    slli.d      a4, a3, 7   # 0x8080808080808080
++    sltu        t4, a2, t4
++    xor         t2, t0, t3
++
++    sub.d       a6, t2, a3
++    andn        a7, a4, t2
++    and         t2, a6, a7
++    or          t3, t2, t4
++
++    bnez        t3, L(count_pos)
++    addi.d      a2, a2, -8
++    addi.d      a0, a5, 8
++    add.d       a2, a2, t1
++
++L(loop):
++    ld.d        t0, a0, 0
++    sltui       t4, a2, 9
++    xor         t2, t0, a1
++    sub.d       a6, t2, a3
++
++    andn        a7, a4, t2
++    and         t2, a6, a7
++    or          t3, t2, t4
++    bnez        t3, L(count_pos)
++
++    ld.d        t1, a0, 8
++    addi.d      a0, a0, 16
++    sltui       t4, a2, 17
++    xor         t2, t1, a1
++
++    sub.d       a6, t2, a3
++    andn        a7, a4, t2
++    and         t2, a6, a7
++    addi.d      a2, a2, -16
++
++    or          t3, t2, t4
++    beqz        t3, L(loop)
++    addi.d      a0, a0, -8
++    addi.d      a2, a2, 8
++
++L(count_pos):
++    ctz.d       t0, t2
++    srli.d      t0, t0, 3
++    sltu        t1, t0, a2
++    add.d       a0, a0, t0
++
++    maskeqz     a0, a0, t1
++    jr          ra
++
++L(out):
++    move        a0, zero
++    jr          ra
++END(MEMCHR_NAME)
++
++#ifndef ANDROID_CHANGES
++#ifdef _LIBC
++libc_hidden_builtin_def (MEMCHR_NAME)
++#endif
++#endif
+diff --git a/sysdeps/loongarch/lp64/multiarch/Makefile b/sysdeps/loongarch/lp64/multiarch/Makefile
+index 09f5fa1c42..24c71f6a42 100644
+--- a/sysdeps/loongarch/lp64/multiarch/Makefile
++++ b/sysdeps/loongarch/lp64/multiarch/Makefile
+@@ -1,5 +1,6 @@
+ ifeq ($(subdir),string)
+ sysdep_routines += memcpy-aligned memcpy-unaligned memcpy-lasx \
+ 		   memset-aligned memset-unaligned memset-lasx \
+-		   memmove-unaligned
++		   memmove-unaligned \
++		   memchr-aligned memchr-lsx
+ endif
+diff --git a/sysdeps/loongarch/lp64/multiarch/ifunc-impl-list.c b/sysdeps/loongarch/lp64/multiarch/ifunc-impl-list.c
+index e575118439..18d9952c48 100644
+--- a/sysdeps/loongarch/lp64/multiarch/ifunc-impl-list.c
++++ b/sysdeps/loongarch/lp64/multiarch/ifunc-impl-list.c
+@@ -52,6 +52,11 @@ __libc_ifunc_impl_list (const char *name, struct libc_ifunc_impl *array,
+ 	      IFUNC_IMPL_ADD (array, i, memset, 1, __memset_unaligned)
+ 	      )
+ 
++  IFUNC_IMPL (i, name, memchr,
++	      IFUNC_IMPL_ADD (array, i, memchr, 1, __memchr_lsx)
++	      IFUNC_IMPL_ADD (array, i, memchr, 1, __memchr_aligned)
++	      )
++
+   return i;
+ }
+ 
+diff --git a/sysdeps/loongarch/lp64/multiarch/ifunc-memchr.h b/sysdeps/loongarch/lp64/multiarch/ifunc-memchr.h
+new file mode 100644
+index 0000000000..9093f08c8e
+--- /dev/null
++++ b/sysdeps/loongarch/lp64/multiarch/ifunc-memchr.h
+@@ -0,0 +1,34 @@
++/* Common definition for memchr implementation.
++   All versions must be listed in ifunc-impl-list.c.
++   Copyright (C) 2017-2022 Free Software Foundation, Inc.
++   This file is part of the GNU C Library.
++
++   The GNU C Library is free software; you can redistribute it and/or
++   modify it under the terms of the GNU Lesser General Public
++   License as published by the Free Software Foundation; either
++   version 2.1 of the License, or (at your option) any later version.
++
++   The GNU C Library is distributed in the hope that it will be useful,
++   but WITHOUT ANY WARRANTY; without even the implied warranty of
++   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++   Lesser General Public License for more details.
++
++   You should have received a copy of the GNU Lesser General Public
++   License along with the GNU C Library; if not, see
++   <https://www.gnu.org/licenses/>.  */
++
++#include <init-arch.h>
++
++extern __typeof (REDIRECT_NAME) OPTIMIZE (lsx) attribute_hidden;
++extern __typeof (REDIRECT_NAME) OPTIMIZE (aligned) attribute_hidden;
++
++static inline void *
++IFUNC_SELECTOR (void)
++{
++  INIT_ARCH();
++
++  if (SUPPORT_LSX)
++    return OPTIMIZE (lsx);
++  else
++    return OPTIMIZE (aligned);
++}
+diff --git a/sysdeps/loongarch/lp64/multiarch/memchr-aligned.S b/sysdeps/loongarch/lp64/multiarch/memchr-aligned.S
+new file mode 100644
+index 0000000000..4677c912cf
+--- /dev/null
++++ b/sysdeps/loongarch/lp64/multiarch/memchr-aligned.S
+@@ -0,0 +1,7 @@
++
++#if IS_IN (libc)
++#define MEMCHR_NAME __memchr_aligned
++#endif
++
++#include "../memchr.S"
++
+diff --git a/sysdeps/loongarch/lp64/multiarch/memchr-lsx.S b/sysdeps/loongarch/lp64/multiarch/memchr-lsx.S
+new file mode 100644
+index 0000000000..16aa549496
+--- /dev/null
++++ b/sysdeps/loongarch/lp64/multiarch/memchr-lsx.S
+@@ -0,0 +1,79 @@
++#ifdef _LIBC
++#include <sysdep.h>
++#include <sys/regdef.h>
++#include <sys/asm.h>
++#else
++#include <sys/asm.h>
++#include <sys/regdef.h>
++#endif
++
++#if IS_IN (libc)
++
++#define MEMCHR_NAME __memchr_lsx
++
++LEAF(MEMCHR_NAME)
++    .align          6
++    beqz            a2, L(out)
++    andi            t1, a0, 0x1f
++    li.d            t2, 32
++    sub.d           a3, a0, t1
++
++    vld             $vr0, a3, 0
++    vld             $vr1, a3, 16
++    sub.d           t2, t2, t1
++    vreplgr2vr.b    $vr2, a1
++
++    sltu            t3, t2, a2
++    vxor.v          $vr0, $vr0, $vr2
++    vxor.v          $vr1, $vr1, $vr2
++    vmsknz.b        $vr0, $vr0
++
++    vmsknz.b        $vr1, $vr1
++    sltui           t3, t3, 1
++    vilvl.h         $vr0, $vr1, $vr0
++    movfr2gr.s      t0, $f0
++
++
++    sra.w           t0, t0, t1
++    orn             t1, t3, t0
++    bnez            t1, L(end)
++    sub.d           a2, a2, t2
++
++    move            a0, a3
++L(loop):
++    vld             $vr0, a0, 32
++    vld             $vr1, a0, 48
++    addi.d          a0, a0, 32
++
++    sltui           t3, a2, 33
++    addi.d          a2, a2, -32
++    vxor.v          $vr0, $vr0, $vr2
++    vxor.v          $vr1, $vr1, $vr2
++
++    vmsknz.b        $vr0, $vr0
++    vmsknz.b        $vr1, $vr1
++    vilvl.h         $vr0, $vr1, $vr0
++    movfr2gr.s      t0, $f0
++
++
++    orn             t1, t3, t0
++    beqz            t1, L(loop)
++    addi.d          a2, a2, 32
++L(end):
++    cto.w           t0, t0
++
++    sltu            t1, t0, a2
++    add.d           a0, a0, t0
++    maskeqz         a0, a0, t1
++    jr              ra
++
++L(out):
++    move            a0, zero
++    jr              ra
++END(MEMCHR_NAME)
++
++#ifdef _LIBC
++libc_hidden_builtin_def (MEMCHR_NAME)
++#endif
++
++#endif
+diff --git a/sysdeps/loongarch/lp64/multiarch/memchr.c b/sysdeps/loongarch/lp64/multiarch/memchr.c
+new file mode 100644
+index 0000000000..18b0e2ef63
+--- /dev/null
++++ b/sysdeps/loongarch/lp64/multiarch/memchr.c
+@@ -0,0 +1,39 @@
++/* Multiple versions of memchr.
++   All versions must be listed in ifunc-impl-list.c.
++   Copyright (C) 2017-2022 Free Software Foundation, Inc.
++   This file is part of the GNU C Library.
++
++   The GNU C Library is free software; you can redistribute it and/or
++   modify it under the terms of the GNU Lesser General Public
++   License as published by the Free Software Foundation; either
++   version 2.1 of the License, or (at your option) any later version.
++
++   The GNU C Library is distributed in the hope that it will be useful,
++   but WITHOUT ANY WARRANTY; without even the implied warranty of
++   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++   Lesser General Public License for more details.
++
++   You should have received a copy of the GNU Lesser General Public
++   License along with the GNU C Library; if not, see
++   <https://www.gnu.org/licenses/>.  */
++
++/* Define multiple versions only for the definition in libc.  */
++#if IS_IN (libc)
++# define memchr __redirect_memchr
++# include <string.h>
++# undef memchr
++
++# define SYMBOL_NAME memchr
++# include "ifunc-memchr.h"
++
++libc_ifunc_redirected (__redirect_memchr, __new_memchr,
++		       IFUNC_SELECTOR ());
++
++# ifdef SHARED
++__hidden_ver1 (__new_memchr, __GI_memchr, __redirect_memchr)
++  __attribute__ ((visibility ("hidden")));
++# endif
++
++# include <shlib-compat.h>
++versioned_symbol (libc, __new_memchr, memchr, GLIBC_2_27);
++#endif
+-- 
+2.20.1
+

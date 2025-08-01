@@ -1,0 +1,280 @@
+From 543eb2432e4cae25eb216d87578b4d5badb59747 Mon Sep 17 00:00:00 2001
+From: Adhemerval Zanella <adhemerval.zanella@linaro.org>
+Date: Mon, 27 Aug 2018 16:16:43 -0300
+Subject: [PATCH 09/11] Fix ifunc support with DT_TEXTREL segments (BZ#20480)
+
+Currently, DT_TEXTREL is incompatible with IFUNC.  When DT_TEXTREL or
+DF_TEXTREL is seen, the dynamic linker calls __mprotect on the segments
+with PROT_READ|PROT_WRITE before applying dynamic relocations. It leads
+to segfault when performing IFUNC resolution (which requires PROT_EXEC
+as well for the IFUNC resolver).
+
+This patch makes it call __mprotect with extra PROT_WRITE bit, which
+will keep the PROT_EXEC bit if exists, and thus fixes the segfault.
+FreeBSD rtld libexec/rtld-elf/rtld.c (reloc_textrel_prot) does the same.
+
+Checked on x86_64-linux-gnu, i686-linux-gnu, aarch64-linux-gnu,
+sparc64-linux-gnu, sparcv9-linux-gnu, and armv8-linux-gnueabihf.
+
+	Adam J. Richte  <adam_richter2004@yahoo.com>
+	Adhemerval Zanella  <adhemerval.zanella@linaro.org>
+	Fangrui Song  <maskray@google.com>
+
+	[BZ #20480]
+	* config.h.in (CAN_TEXTREL_IFUNC): New define.
+	* configure.ac: Add check if linker supports textrel relocation with
+	ifunc.
+	* elf/dl-reloc.c (_dl_relocate_object): Use all required flags on
+	DT_TEXTREL segments, not only PROT_READ and PROT_WRITE.
+	* elf/Makefile (ifunc-pie-tests): Add tst-ifunc-textrel.
+	(CFLAGS-tst-ifunc-textrel.c): New rule.
+	* elf/tst-ifunc-textrel.c: New file.
+
+Change-Id: If3ebef9af9f056c04d632ce94a55afbb55eddb16
+---
+ config.make.in          |  1 +
+ configure               | 47 +++++++++++++++++++++++++++++++++++++++++
+ configure.ac            | 35 ++++++++++++++++++++++++++++++
+ elf/Makefile            |  4 ++++
+ elf/dl-reloc.c          | 20 +++++++-----------
+ elf/tst-ifunc-textrel.c | 45 +++++++++++++++++++++++++++++++++++++++
+ 6 files changed, 140 insertions(+), 12 deletions(-)
+ create mode 100644 elf/tst-ifunc-textrel.c
+
+diff --git a/config.make.in b/config.make.in
+index d9891b2cd8..62c8a87177 100644
+--- a/config.make.in
++++ b/config.make.in
+@@ -75,6 +75,7 @@ use-default-link = @use_default_link@
+ output-format = @libc_cv_output_format@
+ have-cxx-thread_local = @libc_cv_cxx_thread_local@
+ have-loop-to-function = @libc_cv_cc_loop_to_function@
++have-textrel_ifunc = @libc_cv_textrel_ifunc@
+ 
+ multi-arch = @multi_arch@
+ 
+diff --git a/configure b/configure
+index c02753c0fe..be7274b259 100755
+--- a/configure
++++ b/configure
+@@ -664,6 +664,7 @@ INSTALL_PROGRAM
+ sysnames
+ submachine
+ multi_arch
++libc_cv_textrel_ifunc
+ no_stack_protector
+ stack_protector
+ libc_cv_ssp
+@@ -4059,6 +4060,52 @@ fi
+ { $as_echo "$as_me:${as_lineno-$LINENO}: result: $libc_cv_gcc_indirect_function" >&5
+ $as_echo "$libc_cv_gcc_indirect_function" >&6; }
+ 
++# Check if linker supports textrel relocation with ifunc (used on elf/tests).
++# Note that it relies on libc_cv_ld_gnu_indirect_function test above.
++{ $as_echo "$as_me:${as_lineno-$LINENO}: checking whether the linker supports textrels along with ifunc" >&5
++$as_echo_n "checking whether the linker supports textrels along with ifunc... " >&6; }
++if ${libc_cv_textrel_ifunc+:} false; then :
++  $as_echo_n "(cached) " >&6
++else
++  cat > conftest.S <<EOF
++.type foo,%gnu_indirect_function
++foo:
++.globl _start
++_start:
++.globl __start
++__start:
++.data
++#ifdef _LP64
++.quad foo
++#else
++.long foo
++#endif
++.text
++.globl address
++address:
++#ifdef _LP64
++.quad address
++#else
++.long address
++#endif
++EOF
++libc_cv_textrel_ifunc=no
++if test $libc_cv_ld_gnu_indirect_function = yes; then
++   if { ac_try='${CC-cc} $CFLAGS $CPPFLAGS $LDFLAGS -nostartfiles -nostdlib $no_ssp -pie -o conftest conftest.S'
++  { { eval echo "\"\$as_me\":${as_lineno-$LINENO}: \"$ac_try\""; } >&5
++  (eval $ac_try) 2>&5
++  ac_status=$?
++  $as_echo "$as_me:${as_lineno-$LINENO}: \$? = $ac_status" >&5
++  test $ac_status = 0; }; }; then
++     libc_cv_textrel_ifunc=yes
++   fi
++fi
++rm -f conftest*
++fi
++{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $libc_cv_textrel_ifunc" >&5
++$as_echo "$libc_cv_textrel_ifunc" >&6; }
++
++
+ # Check if gcc warns about alias for function with incompatible types.
+ { $as_echo "$as_me:${as_lineno-$LINENO}: checking if compiler warns about alias for function with incompatible types" >&5
+ $as_echo_n "checking if compiler warns about alias for function with incompatible types... " >&6; }
+diff --git a/configure.ac b/configure.ac
+index 139554b94a..30d0d67ca7 100644
+--- a/configure.ac
++++ b/configure.ac
+@@ -670,6 +670,41 @@ if ${CC-cc} -c conftest.c -o conftest.o 1>&AS_MESSAGE_LOG_FD \
+ fi
+ rm -f conftest*])
+ 
++# Check if linker supports textrel relocation with ifunc (used on elf/tests).
++# Note that it relies on libc_cv_ld_gnu_indirect_function test above.
++AC_CACHE_CHECK([whether the linker supports textrels along with ifunc],
++               libc_cv_textrel_ifunc, [dnl
++cat > conftest.S <<EOF
++.type foo,%gnu_indirect_function
++foo:
++.globl _start
++_start:
++.globl __start
++__start:
++.data
++#ifdef _LP64
++.quad foo
++#else
++.long foo
++#endif
++.text
++.globl address
++address:
++#ifdef _LP64
++.quad address
++#else
++.long address
++#endif
++EOF
++libc_cv_textrel_ifunc=no
++if test $libc_cv_ld_gnu_indirect_function = yes; then
++   if AC_TRY_COMMAND(${CC-cc} $CFLAGS $CPPFLAGS $LDFLAGS -nostartfiles -nostdlib $no_ssp -pie -o conftest conftest.S); then
++     libc_cv_textrel_ifunc=yes
++   fi
++fi
++rm -f conftest*])
++AC_SUBST(libc_cv_textrel_ifunc)
++
+ # Check if gcc warns about alias for function with incompatible types.
+ AC_CACHE_CHECK([if compiler warns about alias for function with incompatible types],
+ 	       libc_cv_gcc_incompatible_alias, [dnl
+diff --git a/elf/Makefile b/elf/Makefile
+index 6027926bd1..e78141b10e 100644
+--- a/elf/Makefile
++++ b/elf/Makefile
+@@ -337,6 +337,9 @@ test-internal-extras += $(ifunc-test-modules)
+ ifeq (yes,$(have-fpie))
+ ifunc-pie-tests = ifuncmain1pie ifuncmain1vispie ifuncmain1staticpie \
+ 		  ifuncmain5pie ifuncmain6pie ifuncmain7pie
++ifeq (yes,$(have-textrel_ifunc))
++ifunc-pie-tests += tst-ifunc-textrel
++endif
+ tests-internal += $(ifunc-pie-tests)
+ tests-pie += $(ifunc-pie-tests)
+ endif
+@@ -1266,6 +1269,7 @@ CFLAGS-ifuncmain1staticpie.c += $(pie-ccflag)
+ CFLAGS-ifuncmain5pie.c += $(pie-ccflag)
+ CFLAGS-ifuncmain6pie.c += $(pie-ccflag)
+ CFLAGS-ifuncmain7pie.c += $(pie-ccflag)
++CFLAGS-tst-ifunc-textrel.c += $(pic-ccflag)
+ 
+ $(objpfx)ifuncmain1pie: $(objpfx)ifuncmod1.so
+ $(objpfx)ifuncmain1staticpie: $(objpfx)ifuncdep1pic.o
+diff --git a/elf/dl-reloc.c b/elf/dl-reloc.c
+index 053916eeae..164f4efa10 100644
+--- a/elf/dl-reloc.c
++++ b/elf/dl-reloc.c
+@@ -200,17 +200,6 @@ _dl_relocate_object (struct link_map *l, struct r_scope_elem *scope[],
+ 	    newp->start = PTR_ALIGN_DOWN (ph->p_vaddr, GLRO(dl_pagesize))
+ 			  + (caddr_t) l->l_addr;
+ 
+-	    if (__mprotect (newp->start, newp->len, PROT_READ|PROT_WRITE) < 0)
+-	      {
+-		errstring = N_("cannot make segment writable for relocation");
+-	      call_error:
+-		_dl_signal_error (errno, l->l_name, NULL, errstring);
+-	      }
+-
+-#if (PF_R | PF_W | PF_X) == 7 && (PROT_READ | PROT_WRITE | PROT_EXEC) == 7
+-	    newp->prot = (PF_TO_PROT
+-			  >> ((ph->p_flags & (PF_R | PF_W | PF_X)) * 4)) & 0xf;
+-#else
+ 	    newp->prot = 0;
+ 	    if (ph->p_flags & PF_R)
+ 	      newp->prot |= PROT_READ;
+@@ -218,7 +207,14 @@ _dl_relocate_object (struct link_map *l, struct r_scope_elem *scope[],
+ 	      newp->prot |= PROT_WRITE;
+ 	    if (ph->p_flags & PF_X)
+ 	      newp->prot |= PROT_EXEC;
+-#endif
++
++	    if (__mprotect (newp->start, newp->len, newp->prot|PROT_WRITE) < 0)
++	      {
++		errstring = N_("cannot make segment writable for relocation");
++	      call_error:
++		_dl_signal_error (errno, l->l_name, NULL, errstring);
++	      }
++
+ 	    newp->next = textrels;
+ 	    textrels = newp;
+ 	  }
+diff --git a/elf/tst-ifunc-textrel.c b/elf/tst-ifunc-textrel.c
+new file mode 100644
+index 0000000000..d34c4db82a
+--- /dev/null
++++ b/elf/tst-ifunc-textrel.c
+@@ -0,0 +1,45 @@
++/* Check DT_TEXTREL/DF_TEXTREL support with ifunc.
++   Copyright (C) 2018 Free Software Foundation, Inc.
++   This file is part of the GNU C Library.
++
++   The GNU C Library is free software; you can redistribute it and/or
++   modify it under the terms of the GNU Lesser General Public
++   License as published by the Free Software Foundation; either
++   version 2.1 of the License, or (at your option) any later version.
++
++   The GNU C Library is distributed in the hope that it will be useful,
++   but WITHOUT ANY WARRANTY; without even the implied warranty of
++   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++   Lesser General Public License for more details.
++
++   You should have received a copy of the GNU Lesser General Public
++   License along with the GNU C Library; if not, see
++   <http://www.gnu.org/licenses/>.  */
++
++#include <stdint.h>
++
++/* Force a text relocation in the object.  */
++static const uintptr_t
++address __attribute__((section(".text"))) = (uintptr_t) &address;
++
++static uintptr_t
++foo_impl (void)
++{
++  return address;
++}
++
++void *
++__attribute__((noinline))
++foo (void)
++{
++  return (void*) foo_impl;
++}
++__asm__ (".type foo, %gnu_indirect_function");
++
++static int
++do_test (void)
++{
++  return (uintptr_t) foo () != 0 ? 0 : 1;
++}
++
++#include <support/test-driver.c>
+-- 
+2.40.1
+

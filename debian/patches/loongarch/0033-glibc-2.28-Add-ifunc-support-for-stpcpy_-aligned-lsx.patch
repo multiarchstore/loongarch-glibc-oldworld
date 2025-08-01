@@ -1,0 +1,484 @@
+From 8fffa3958820c8bd3402eefc1b3f0d0940a7d71f Mon Sep 17 00:00:00 2001
+From: caiyinyu <caiyinyu@loongson.cn>
+Date: Sun, 19 Feb 2023 11:55:26 +0800
+Subject: [PATCH 33/44] glibc-2.28: Add ifunc support for stpcpy_{aligned,lsx}
+
+Change-Id: If8ee0cec580bb00d5cee51d743276430b68de58b
+---
+ sysdeps/loongarch/lp64/multiarch/Makefile     |   3 +-
+ .../lp64/multiarch/ifunc-impl-list.c          |   5 +
+ .../loongarch/lp64/multiarch/stpcpy-aligned.S |   8 +
+ sysdeps/loongarch/lp64/multiarch/stpcpy-lsx.S | 179 +++++++++++++++++
+ sysdeps/loongarch/lp64/multiarch/stpcpy.c     |  43 +++++
+ sysdeps/loongarch/lp64/stpcpy.S               | 180 ++++++++++++++++++
+ 6 files changed, 417 insertions(+), 1 deletion(-)
+ create mode 100644 sysdeps/loongarch/lp64/multiarch/stpcpy-aligned.S
+ create mode 100644 sysdeps/loongarch/lp64/multiarch/stpcpy-lsx.S
+ create mode 100644 sysdeps/loongarch/lp64/multiarch/stpcpy.c
+ create mode 100644 sysdeps/loongarch/lp64/stpcpy.S
+
+diff --git a/sysdeps/loongarch/lp64/multiarch/Makefile b/sysdeps/loongarch/lp64/multiarch/Makefile
+index 00e8f82584..25926ae0b1 100644
+--- a/sysdeps/loongarch/lp64/multiarch/Makefile
++++ b/sysdeps/loongarch/lp64/multiarch/Makefile
+@@ -12,5 +12,6 @@ sysdep_routines += memcpy-aligned memcpy-unaligned memcpy-lasx \
+ 		   strnlen-aligned strnlen-unaligned strnlen-lsx \
+ 		   strchrnul-aligned strchrnul-unaligned strchrnul-lsx \
+ 		   strncmp-aligned strncmp-unaligned strncmp-lsx \
+-		   strcpy-aligned strcpy-unaligned strcpy-lsx
++		   strcpy-aligned strcpy-unaligned strcpy-lsx \
++		   stpcpy-aligned stpcpy-lsx
+ endif
+diff --git a/sysdeps/loongarch/lp64/multiarch/ifunc-impl-list.c b/sysdeps/loongarch/lp64/multiarch/ifunc-impl-list.c
+index ccd0924aa3..599718056c 100644
+--- a/sysdeps/loongarch/lp64/multiarch/ifunc-impl-list.c
++++ b/sysdeps/loongarch/lp64/multiarch/ifunc-impl-list.c
+@@ -116,6 +116,11 @@ __libc_ifunc_impl_list (const char *name, struct libc_ifunc_impl *array,
+ 	      IFUNC_IMPL_ADD (array, i, strcpy, 1, __strcpy_unaligned)
+ 	      )
+ 
++  IFUNC_IMPL (i, name, stpcpy,
++	      IFUNC_IMPL_ADD (array, i, stpcpy, 1, __stpcpy_lsx)
++	      IFUNC_IMPL_ADD (array, i, stpcpy, 1, __stpcpy_aligned)
++	      )
++
+   return i;
+ }
+ 
+diff --git a/sysdeps/loongarch/lp64/multiarch/stpcpy-aligned.S b/sysdeps/loongarch/lp64/multiarch/stpcpy-aligned.S
+new file mode 100644
+index 0000000000..3d134e3f00
+--- /dev/null
++++ b/sysdeps/loongarch/lp64/multiarch/stpcpy-aligned.S
+@@ -0,0 +1,8 @@
++
++#if IS_IN (libc)
++
++#define STPCPY_NAME __stpcpy_aligned
++
++#endif
++
++#include "../stpcpy.S"
+diff --git a/sysdeps/loongarch/lp64/multiarch/stpcpy-lsx.S b/sysdeps/loongarch/lp64/multiarch/stpcpy-lsx.S
+new file mode 100644
+index 0000000000..10885f00de
+--- /dev/null
++++ b/sysdeps/loongarch/lp64/multiarch/stpcpy-lsx.S
+@@ -0,0 +1,179 @@
++#ifdef _LIBC
++#include <sysdep.h>
++#include <sys/regdef.h>
++#include <sys/asm.h>
++#else
++#include <sys/asm.h>
++#include <sys/regdef.h>
++#endif
++
++#if IS_IN (libc)
++
++#define STPCPY_NAME __stpcpy_lsx
++
++L(magic_num):
++    .align          6
++    .dword          0x0706050403020100
++    .dword          0x0f0e0d0c0b0a0908
++    nop
++    nop
++    nop
++    nop
++ENTRY_NO_ALIGN(STPCPY_NAME)
++    pcaddi          t0, -8
++    andi            a4, a1, 0xf
++    vld             $vr1, t0, 0
++    beqz            a4, L(load_start)
++
++    xor             t0, a1, a4
++    vld             $vr0, t0, 0
++    vreplgr2vr.b    $vr2, a4
++    vadd.b          $vr2, $vr2, $vr1
++
++
++    vshuf.b         $vr0, $vr2, $vr0, $vr2
++    vsetanyeqz.b    $fcc0, $vr0
++    bcnez           $fcc0, L(end)
++L(load_start):
++    vld             $vr0, a1, 0
++
++    li.d            t1, 16
++    andi            a3, a0, 0xf
++    vsetanyeqz.b    $fcc0, $vr0
++    sub.d           t0, t1, a3
++
++    bcnez           $fcc0, L(end)
++    add.d           a1, a1, t0
++    vst             $vr0, a0, 0
++    add.d           a0, a0, t0
++
++    bne             a3, a4, L(unaligned)
++    vld             $vr0, a1, 0
++    vsetanyeqz.b    $fcc0, $vr0
++    bcnez           $fcc0, L(end)
++
++
++L(loop):
++    vst             $vr0, a0, 0
++    vld             $vr0, a1, 16
++    addi.d          a0, a0, 16
++    addi.d          a1, a1, 16
++
++    vsetanyeqz.b    $fcc0, $vr0
++    bceqz           $fcc0, L(loop)
++    vseqi.b         $vr1, $vr0, 0
++    vfrstpi.b       $vr1, $vr1, 0
++
++    vpickve2gr.bu   t0, $vr1, 0
++    add.d           a1, a1, t0
++    vld             $vr0, a1, -15
++    add.d           a0, a0, t0
++
++    vst             $vr0, a0, -15
++    jr              ra
++L(end):
++    vseqi.b         $vr1, $vr0, 0
++    vfrstpi.b       $vr1, $vr1, 0
++
++
++    vpickve2gr.bu   t0, $vr1, 0
++    addi.d          t0, t0, 1
++L(end_16):
++    andi            t1, t0, 16
++    beqz            t1, L(end_8)
++
++    vst             $vr0, a0, 0
++    addi.d          a0, a0, 15
++    jr              ra
++L(end_8):
++    andi            t2, t0, 8
++
++    andi            t3, t0, 4
++    andi            t4, t0, 2
++    andi            t5, t0, 1
++    beqz            t2, L(end_4)
++
++    vstelm.d        $vr0, a0, 0, 0
++    addi.d          a0, a0, 8
++    vbsrl.v         $vr0, $vr0, 8
++L(end_4):
++    beqz            t3, L(end_2)
++
++
++    vstelm.w        $vr0, a0, 0, 0
++    addi.d          a0, a0, 4
++    vbsrl.v         $vr0, $vr0, 4
++L(end_2):
++    beqz            t4, L(end_1)
++
++    vstelm.h        $vr0, a0, 0, 0
++    addi.d          a0, a0, 2
++    vbsrl.v         $vr0, $vr0, 2
++L(end_1):
++    beqz            t5, L(out)
++
++    vstelm.b        $vr0, a0, 0, 0
++    addi.d          a0, a0, 1
++L(out):
++    addi.d          a0, a0, -1
++    jr              ra
++
++L(unaligned):
++    andi           a3, a1, 0xf
++    bstrins.d      a1, zero, 3, 0
++    vld            $vr2, a1, 0
++    vreplgr2vr.b   $vr3, a3
++
++
++    vslt.b         $vr4, $vr1, $vr3
++    vor.v          $vr0, $vr2, $vr4
++    vsetanyeqz.b   $fcc0, $vr0
++    bcnez          $fcc0, L(un_first_end)
++
++    vld            $vr0, a1, 16
++    vadd.b         $vr3, $vr3, $vr1
++    addi.d         a1, a1, 16
++    vshuf.b        $vr4, $vr0, $vr2, $vr3
++
++    vsetanyeqz.b   $fcc0, $vr0
++    bcnez          $fcc0, L(un_end)
++L(un_loop):
++    vor.v          $vr2, $vr0, $vr0
++    vld            $vr0, a1, 16
++
++    vst            $vr4, a0, 0
++    addi.d         a1, a1, 16
++    addi.d         a0, a0, 16
++    vshuf.b        $vr4, $vr0, $vr2, $vr3
++
++
++    vsetanyeqz.b   $fcc0, $vr0
++    bceqz          $fcc0, L(un_loop)
++L(un_end):
++    vsetanyeqz.b    $fcc0, $vr4
++    bcnez           $fcc0, 1f
++
++    vst             $vr4, a0, 0
++1:
++    vseqi.b         $vr1, $vr0, 0
++    vfrstpi.b       $vr1, $vr1, 0
++    vpickve2gr.bu   t0, $vr1, 0
++
++    add.d           a1, a1, t0
++    vld             $vr0, a1, -15
++    add.d           a0, a0, t0
++    sub.d           a0, a0, a3
++
++    vst             $vr0, a0, 1
++    addi.d          a0, a0, 16
++    jr              ra
++L(un_first_end):
++    addi.d          a0, a0, -16
++    b               1b
++END(STPCPY_NAME)
++
++#ifdef _LIBC
++libc_hidden_builtin_def (STPCPY_NAME)
++#endif
++
++#endif
+diff --git a/sysdeps/loongarch/lp64/multiarch/stpcpy.c b/sysdeps/loongarch/lp64/multiarch/stpcpy.c
+new file mode 100644
+index 0000000000..be9f09979e
+--- /dev/null
++++ b/sysdeps/loongarch/lp64/multiarch/stpcpy.c
+@@ -0,0 +1,43 @@
++/* Multiple versions of stpcpy.
++   All versions must be listed in ifunc-impl-list.c.
++   Copyright (C) 2017-2023 Free Software Foundation, Inc.
++   This file is part of the GNU C Library.
++
++   The GNU C Library is free software; you can redistribute it and/or
++   modify it under the terms of the GNU Lesser General Public
++   License as published by the Free Software Foundation; either
++   version 2.1 of the License, or (at your option) any later version.
++
++   The GNU C Library is distributed in the hope that it will be useful,
++   but WITHOUT ANY WARRANTY; without even the implied warranty of
++   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++   Lesser General Public License for more details.
++
++   You should have received a copy of the GNU Lesser General Public
++   License along with the GNU C Library; if not, see
++   <https://www.gnu.org/licenses/>.  */
++
++/* Define multiple versions only for the definition in libc.  */
++#if IS_IN (libc)
++# define stpcpy __redirect_stpcpy
++# define __stpcpy __redirect___stpcpy
++# define NO_MEMPCPY_STPCPY_REDIRECT
++# define __NO_STRING_INLINES
++# include <string.h>
++# undef stpcpy
++# undef __stpcpy
++
++# define SYMBOL_NAME stpcpy
++# include "ifunc-strrchr.h"
++
++libc_ifunc_redirected (__redirect_stpcpy, __stpcpy, IFUNC_SELECTOR ());
++
++weak_alias (__stpcpy, stpcpy)
++# ifdef SHARED
++__hidden_ver1 (__stpcpy, __GI___stpcpy, __redirect___stpcpy)
++  __attribute__ ((visibility ("hidden")));
++__hidden_ver1 (stpcpy, __GI_stpcpy, __redirect_stpcpy)
++  __attribute__ ((visibility ("hidden")));
++# endif
++#endif
++
+diff --git a/sysdeps/loongarch/lp64/stpcpy.S b/sysdeps/loongarch/lp64/stpcpy.S
+new file mode 100644
+index 0000000000..9d4b0c8d8a
+--- /dev/null
++++ b/sysdeps/loongarch/lp64/stpcpy.S
+@@ -0,0 +1,180 @@
++#ifdef _LIBC
++#include <sysdep.h>
++#include <sys/regdef.h>
++#include <sys/asm.h>
++#else
++#include <sys/asm.h>
++#include <sys/regdef.h>
++#endif
++
++#ifndef STPCPY_NAME
++#define STPCPY_NAME __stpcpy
++#endif
++
++LEAF(STPCPY_NAME)
++    .align      6
++    andi        a3, a0, 0x7
++    beqz        a3, L(dest_align)
++    sub.d       a5, a1, a3
++    addi.d      a5, a5, 8
++
++L(make_dest_align):
++    ld.b        t0, a1, 0
++    addi.d      a1, a1, 1
++    st.b        t0, a0, 0
++    addi.d      a0, a0, 1
++
++    beqz        t0, L(al_out)
++    bne         a1, a5, L(make_dest_align)
++
++L(dest_align):
++    andi        a4, a1, 7
++    bstrins.d   a1, zero, 2, 0
++
++    lu12i.w     t5, 0x1010
++    ld.d        t0, a1, 0
++    ori         t5, t5, 0x101
++    bstrins.d   t5, t5, 63, 32
++
++    slli.d      t6, t5, 0x7
++    bnez        a4, L(unalign)
++    sub.d       t1, t0, t5
++    andn        t2, t6, t0
++
++    and         t3, t1, t2
++    bnez        t3, L(al_end)
++
++L(al_loop):
++    st.d        t0, a0, 0
++    ld.d        t0, a1, 8
++
++    addi.d      a1, a1, 8
++    addi.d      a0, a0, 8
++    sub.d       t1, t0, t5
++    andn        t2, t6, t0
++
++    and         t3, t1, t2
++    beqz        t3, L(al_loop)
++
++L(al_end):
++    ctz.d       t1, t3
++    srli.d      t1, t1, 3
++    addi.d      t1, t1, 1 # add 1, since '\0' needs to be copied to dest
++
++    andi        a3, t1, 8
++    andi        a4, t1, 4
++    andi        a5, t1, 2
++    andi        a6, t1, 1
++
++L(al_end_8):
++    beqz        a3, L(al_end_4)
++    st.d        t0, a0, 0
++    addi.d      a0, a0, 7
++    jr          ra
++L(al_end_4):
++    beqz        a4, L(al_end_2)
++    st.w        t0, a0, 0
++    addi.d      a0, a0, 4
++    srli.d      t0, t0, 32
++L(al_end_2):
++    beqz        a5, L(al_end_1)
++    st.h        t0, a0, 0
++    addi.d      a0, a0, 2
++    srli.d      t0, t0, 16
++L(al_end_1):
++    beqz        a6, L(al_out)
++    st.b        t0, a0, 0
++    addi.d      a0, a0, 1
++L(al_out):
++    addi.d      a0, a0, -1
++    jr          ra
++
++L(unalign):
++    slli.d      a5, a4, 3
++    li.d        t1, -1
++    sub.d       a6, zero, a5
++
++    srl.d       a7, t0, a5
++    sll.d       t7, t1, a6
++
++    or          t0, a7, t7
++    sub.d       t1, t0, t5
++    andn        t2, t6, t0
++    and         t3, t1, t2
++
++    bnez        t3, L(un_end)
++
++    ld.d        t4, a1, 8
++    addi.d      a1, a1, 8
++
++    sub.d       t1, t4, t5
++    andn        t2, t6, t4
++    sll.d       t0, t4, a6
++    and         t3, t1, t2
++
++    or          t0, t0, a7
++    bnez        t3, L(un_end_with_remaining)
++
++L(un_loop):
++    srl.d       a7, t4, a5
++
++    ld.d        t4, a1, 8
++    addi.d      a1, a1, 8
++
++    st.d        t0, a0, 0
++    addi.d      a0, a0, 8
++
++    sub.d       t1, t4, t5
++    andn        t2, t6, t4
++    sll.d       t0, t4, a6
++    and         t3, t1, t2
++
++    or          t0, t0, a7
++    beqz        t3, L(un_loop)
++
++L(un_end_with_remaining):
++    ctz.d       t1, t3
++    srli.d      t1, t1, 3
++    addi.d      t1, t1, 1
++    sub.d       t1, t1, a4
++
++    blt         t1, zero, L(un_end_less_8)
++    st.d        t0, a0, 0
++    addi.d      a0, a0, 8
++    beqz        t1, L(un_out)
++    srl.d       t0, t4, a5  # get the remaining part
++    b           L(un_end_less_8)
++
++L(un_end):
++    ctz.d       t1, t3
++    srli.d      t1, t1, 3
++    addi.d      t1, t1, 1
++
++L(un_end_less_8):
++    andi        a4, t1, 4
++    andi        a5, t1, 2
++    andi        a6, t1, 1
++L(un_end_4):
++    beqz        a4, L(un_end_2)
++    st.w        t0, a0, 0
++    addi.d      a0, a0, 4
++    srli.d      t0, t0, 32
++L(un_end_2):
++    beqz        a5, L(un_end_1)
++    st.h        t0, a0, 0
++    addi.d      a0, a0, 2
++    srli.d      t0, t0, 16
++L(un_end_1):
++    beqz        a6, L(un_out)
++    st.b        t0, a0, 0
++    addi.d      a0, a0, 1
++L(un_out):
++    addi.d      a0, a0, -1
++    jr          ra
++
++END(STPCPY_NAME)
++
++#ifdef _LIBC
++weak_alias (STPCPY_NAME, stpcpy)
++libc_hidden_builtin_def (STPCPY_NAME)
++#endif
+-- 
+2.20.1
+

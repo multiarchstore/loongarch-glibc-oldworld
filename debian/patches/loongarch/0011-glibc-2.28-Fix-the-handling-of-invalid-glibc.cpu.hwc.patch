@@ -1,0 +1,350 @@
+From 20c97e6dad9637bb4ad2e0b2bd84fb582b149f04 Mon Sep 17 00:00:00 2001
+From: caiyinyu <caiyinyu@loongson.cn>
+Date: Sun, 28 Apr 2024 11:51:01 +0800
+Subject: [PATCH 11/11] glibc-2.28: Fix the handling of invalid
+ glibc.cpu.hwcaps values in GLIBC_TUNABLES
+
+This commit addresses an issue with the tunables feature in glibc version 2.28,
+where an invalid value for the `glibc.cpu.hwcaps` environmental variable would
+trigger a call to `_dl_fatal_printf`, outputting an error message and causing
+dynamic linker (ld.so) functionality to fail. For instance, setting
+`export GLIBC_TUNABLES=glibc.cpu.hwcaps=a` (an invalid value) would lead to an
+error saying: "The valid values of glibc.cpu.hwcaps are UAL, LASX, LSX!!" and
+prevent commands like `ls` from executing properly.
+
+This fix aligns the functionality of tunables in glibc-2.28 with the expected
+behavior, enhancing system resilience and user experience.
+
+Change-Id: Ieda2840e985907c6d0dc4c647892d552fe2c658c
+---
+ sysdeps/loongarch/Makefile                    |   5 +
+ sysdeps/loongarch/cpu-tunables.c              |  99 +++++++------
+ .../lp64/multiarch/dl-symbol-redir-ifunc.h    |  27 ++++
+ sysdeps/loongarch/tst-hwcap-tunables.c        | 136 ++++++++++++++++++
+ 4 files changed, 224 insertions(+), 43 deletions(-)
+ create mode 100644 sysdeps/loongarch/lp64/multiarch/dl-symbol-redir-ifunc.h
+ create mode 100644 sysdeps/loongarch/tst-hwcap-tunables.c
+
+diff --git a/sysdeps/loongarch/Makefile b/sysdeps/loongarch/Makefile
+index 286cff6763..0bcfd0b759 100644
+--- a/sysdeps/loongarch/Makefile
++++ b/sysdeps/loongarch/Makefile
+@@ -1,5 +1,10 @@
+ ifeq ($(subdir),misc)
+ sysdep_headers += sys/asm.h
++tests += \
++  tst-hwcap-tunables \
++  # tests
++
++tst-hwcap-tunables-ARGS = -- $(host-test-program-cmd)
+ endif
+ 
+ ifeq ($(subdir),elf)
+diff --git a/sysdeps/loongarch/cpu-tunables.c b/sysdeps/loongarch/cpu-tunables.c
+index e0799ca959..58cce9345e 100644
+--- a/sysdeps/loongarch/cpu-tunables.c
++++ b/sysdeps/loongarch/cpu-tunables.c
+@@ -26,69 +26,82 @@
+ # include <cpu-features.h>
+ # include <ldsodefs.h>
+ # include <sys/auxv.h>
++# include <dl-symbol-redir-ifunc.h>
+ 
+-# define HWCAP_LOONGARCH_IFUNC \
+-  (HWCAP_LOONGARCH_UAL | HWCAP_LOONGARCH_LSX | HWCAP_LOONGARCH_LASX)
+-
+-# define CHECK_GLIBC_IFUNC_CPU_OFF(f, name, len)			\
++#define CHECK_GLIBC_IFUNC_CPU(f, name, len)			\
+   _Static_assert (sizeof (#name) - 1 == len, #name " != " #len);	\
+-  if (!memcmp (f, #name, len) &&					\
+-      (GLRO (dl_hwcap) & HWCAP_LOONGARCH_##name))			\
++  if (memcmp (f, #name, len) == 0)				\
+     {									\
+-      hwcap |= (HWCAP_LOONGARCH_##name | (~HWCAP_LOONGARCH_IFUNC));	\
++      if (disable)							\
++	GLRO(dl_larch_cpu_features).hwcap &= (~HWCAP_LOONGARCH_##name);	\
++      else								\
++	GLRO(dl_larch_cpu_features).hwcap |= HWCAP_LOONGARCH_##name;	\
+       break;								\
+-    }									\
+-
++    }
+ 
+-attribute_hidden
+-void
++attribute_hidden void
+ TUNABLE_CALLBACK (set_hwcaps) (tunable_val_t *valp)
+ {
++  /* The current IFUNC selection is always using the most recent
++     features which are available via AT_HWCAP.  But in
++     some scenarios it is useful to adjust this selection.
++
++     The environment variable:
++
++     GLIBC_TUNABLES=glibc.cpu.hwcaps=-xxx,yyy,zzz,....
++
++     can be used to enable HWCAP feature yyy, disable HWCAP feature xxx,
++     where the feature name is case-sensitive and has to match the ones
++     used below.  */
++
+   const char *p = valp->strval;
+-  size_t len;
+-  unsigned long hwcap = 0;
+   const char *c;
+ 
+-  do {
++  do
++    {
++      bool disable;
++      size_t len, nl;
++      const char *n;
++
+       for (c = p; *c != ','; c++)
+ 	if (*c == '\0')
+ 	  break;
+ 
+       len = c - p;
++      disable = *p == '-';
++      if (disable)
++	{
++	  n = p + 1;
++	  nl = len - 1;
++	}
++      else
++	{
++	  n = p;
++	  nl = len;
++	}
+ 
+-      switch(len)
+-      {
+-	default:
+-	  _dl_fatal_printf (
+-	    "The valid values of glibc.cpu.hwcaps is UAL, LASX, LSX!!\n"
+-			    );
+-	  break;
+-	case 3:
+-	  {
+-	    CHECK_GLIBC_IFUNC_CPU_OFF (p, LSX, 3);
+-	    CHECK_GLIBC_IFUNC_CPU_OFF (p, UAL, 3);
+-	    _dl_fatal_printf (
+-		"Some features are invalid or not supported on this machine!!\n"
+-		"The valid values of glibc.cpu.hwcaps is UAL, LASX, LSX!!\n"
+-                       );
+-	  }
+-	  break;
+-	case 4:
+-	  {
+-	    CHECK_GLIBC_IFUNC_CPU_OFF (p, LASX, 4);
+-	    _dl_fatal_printf (
+-		"Some features are invalid or not supported on this machine!!\n"
+-		"The valid values of glibc.cpu.hwcaps is UAL, LASX, LSX!!\n"
+-                       );
+-	  }
+-	  break;
+-      }
+-
++      switch (nl)
++	{
++	  default:
++	    break;
++	  case 3:
++	    {
++	      CHECK_GLIBC_IFUNC_CPU (n, LSX, 3);
++	      CHECK_GLIBC_IFUNC_CPU (n, UAL, 3);
++	    }
++	    break;
++	  case 4:
++	    {
++	      CHECK_GLIBC_IFUNC_CPU (n, LASX, 4);
++	    }
++	    break;
++	}
+       p += len + 1;
+     }
+   while (*c != '\0');
+ 
+-  GLRO (dl_larch_cpu_features).hwcap &= hwcap;
++  /* Ensure that the user has not enabled any unsupported features.  */
++  GLRO(dl_larch_cpu_features).hwcap &= GLRO(dl_hwcap);
+ }
+ 
+ #endif
+diff --git a/sysdeps/loongarch/lp64/multiarch/dl-symbol-redir-ifunc.h b/sysdeps/loongarch/lp64/multiarch/dl-symbol-redir-ifunc.h
+new file mode 100644
+index 0000000000..a73390b12f
+--- /dev/null
++++ b/sysdeps/loongarch/lp64/multiarch/dl-symbol-redir-ifunc.h
+@@ -0,0 +1,27 @@
++/* Symbol rediretion for loader/static initialization code.
++   Copyright (C) 2023-2024 Free Software Foundation, Inc.
++   This file is part of the GNU C Library.
++
++   The GNU C Library is free software; you can redistribute it and/or
++   modify it under the terms of the GNU Lesser General Public
++   License as published by the Free Software Foundation; either
++   version 2.1 of the License, or (at your option) any later version.
++
++   The GNU C Library is distributed in the hope that it will be useful,
++   but WITHOUT ANY WARRANTY; without even the implied warranty of
++   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++   Lesser General Public License for more details.
++
++   You should have received a copy of the GNU Lesser General Public
++   License along with the GNU C Library; if not, see
++   <https://www.gnu.org/licenses/>.  */
++
++#ifndef _DL_IFUNC_GENERIC_H
++#define _DL_IFUNC_GENERIC_H
++
++#ifndef SHARED
++asm ("memset = __memset_aligned");
++asm ("memcmp = __memcmp_aligned");
++#endif
++
++#endif
+diff --git a/sysdeps/loongarch/tst-hwcap-tunables.c b/sysdeps/loongarch/tst-hwcap-tunables.c
+new file mode 100644
+index 0000000000..fe1b95a8bf
+--- /dev/null
++++ b/sysdeps/loongarch/tst-hwcap-tunables.c
+@@ -0,0 +1,136 @@
++/* Tests for LoongArch GLIBC_TUNABLES=glibc.cpu.hwcaps filter.
++   Copyright (C) 2024 Free Software Foundation, Inc.
++   This file is part of the GNU C Library.
++
++   The GNU C Library is free software; you can redistribute it and/or
++   modify it under the terms of the GNU Lesser General Public
++   License as published by the Free Software Foundation; either
++   version 2.1 of the License, or (at your option) any later version.
++
++   The GNU C Library is distributed in the hope that it will be useful,
++   but WITHOUT ANY WARRANTY; without even the implied warranty of
++   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++   Lesser General Public License for more details.
++
++   You should have received a copy of the GNU Lesser General Public
++   License along with the GNU C Library; if not, see
++   <http://www.gnu.org/licenses/>.  */
++
++#include <array_length.h>
++#include <getopt.h>
++#include <ifunc-impl-list.h>
++#include <spawn.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#include <support/check.h>
++#include <support/support.h>
++#include <support/xunistd.h>
++#include <sys/auxv.h>
++#include <sys/wait.h>
++
++/* Nonzero if the program gets called via `exec'.  */
++#define CMDLINE_OPTIONS \
++  { "restart", no_argument, &restart, 1 }, \
++  { "enable", no_argument, &enable, 1 },
++static int restart;
++static int enable;
++
++/* Hold the four initial argument used to respawn the process, plus the extra
++   '--direct', '--restart', and the function to check.  */
++static char *spargs[9];
++static int fc;
++
++/* Called on process re-execution.  */
++_Noreturn static void
++handle_restart (int argc, char *argv[])
++{
++  TEST_VERIFY_EXIT (argc == 1);
++  const char *funcname = argv[0];
++
++  struct libc_ifunc_impl impls[32];
++  int cnt = __libc_ifunc_impl_list ("memcpy", impls, array_length (impls));
++  if (cnt == 0)
++    _exit (EXIT_SUCCESS);
++  TEST_VERIFY_EXIT (cnt >= 1);
++  for (int i = 0; i < cnt; i++)
++  {
++    if (strcmp (impls[i].name, funcname) == 0)
++      {
++	if (enable && impls[i].usable != true)
++	  FAIL_EXIT1 ("FAIL: %s ifunc selection is not enabled.\n", funcname);
++	else if (!enable && impls[i].usable != false)
++	  FAIL_EXIT1 ("FAIL: %s ifunc selection is not disabled.\n", funcname);
++	break;
++      }
++  }
++
++  _exit (EXIT_SUCCESS);
++}
++
++static void
++run_test (const char *filter, const char *funcname, int disable)
++{
++  if (disable)
++    printf ("info: checking filter %s (expect %s ifunc "
++	    "selection to be disabled)\n", filter, funcname);
++  else
++    {
++      printf ("info: checking filter %s (expect %s ifunc "
++	      "selection to be enabled)\n", filter, funcname);
++      spargs[fc++] = (char *) "--enable";
++    }
++
++  char *tunable = xasprintf ("GLIBC_TUNABLES=glibc.cpu.hwcaps=%s", filter);
++  char *const newenvs[] = { (char*) tunable, NULL };
++  spargs[fc] = (char *) funcname;
++
++  pid_t pid;
++  TEST_COMPARE (posix_spawn (&pid, spargs[0], NULL, NULL, spargs, newenvs), 0);
++  int status;
++  TEST_COMPARE (xwaitpid (pid, &status, 0), pid);
++  TEST_VERIFY (WIFEXITED (status));
++  TEST_VERIFY (!WIFSIGNALED (status));
++  TEST_COMPARE (WEXITSTATUS (status), 0);
++
++  if (!disable)
++    fc--;
++  free (tunable);
++}
++
++static int
++do_test (int argc, char *argv[])
++{
++  if (restart)
++    handle_restart (argc - 1, &argv[1]);
++
++  TEST_VERIFY_EXIT (argc == 2 || argc == 5);
++
++  int i;
++  for (i = 0; i < argc - 1; i++)
++    spargs[i] = argv[i + 1];
++  spargs[i++] = (char *) "--direct";
++  spargs[i++] = (char *) "--restart";
++  fc = i++;
++  spargs[i] = NULL;
++
++  unsigned long int hwcap = getauxval (AT_HWCAP);
++
++  if (hwcap & HWCAP_LOONGARCH_LASX)
++    run_test ("-LASX", "__memcpy_lasx", 1);
++  if (hwcap & HWCAP_LOONGARCH_LSX)
++    run_test ("-LSX", "__memcpy_lsx", 1);
++  if (hwcap & HWCAP_LOONGARCH_UAL)
++    run_test ("-UAL", "__memcpy_unaligned", 1);
++
++  /* __memcpy_aligned is the default ifunc selection and will be
++   * always enabled.  */
++  run_test ("-LASX,-LSX,-UAL", "__memcpy_aligned", 0);
++  run_test ("-LASX,-LSX", "__memcpy_aligned", 0);
++  run_test ("-LASX", "__memcpy_aligned", 0);
++
++  return 0;
++}
++
++#define TEST_FUNCTION_ARGV do_test
++#include <support/test-driver.c>
+-- 
+2.40.1
+

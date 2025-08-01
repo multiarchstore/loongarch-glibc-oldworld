@@ -1,0 +1,74 @@
+From d716cc3b640dc60c3ca2bad64a0357a12bae7d53 Mon Sep 17 00:00:00 2001
+From: caiyinyu <caiyinyu@loongson.cn>
+Date: Fri, 26 May 2023 14:58:39 +0800
+Subject: [PATCH 5/9] glibc-2.28: remove ABILPX32 related code.
+
+Change-Id: I73eb5bc4d4ca12e4d45ed6b533fa38d60a3a633f
+---
+ elf/elf.h                                       | 3 +--
+ sysdeps/loongarch/dl-machine.h                  | 2 --
+ sysdeps/loongarch/nptl/bits/pthreadtypes-arch.h | 2 +-
+ sysdeps/loongarch/sys/regdef.h                  | 4 +---
+ 4 files changed, 3 insertions(+), 8 deletions(-)
+
+diff --git a/elf/elf.h b/elf/elf.h
+index 756c0454dc..6f64e204c2 100644
+--- a/elf/elf.h
++++ b/elf/elf.h
+@@ -3933,10 +3933,9 @@ enum
+ #define R_NDS32_TLS_TPOFF	102
+ #define R_NDS32_TLS_DESC	119
+ 
+-/* LoongISA ELF Flags */
++/* LoongArch ELF Flags */
+ #define EF_LARCH_ABI             0x0003
+ #define EF_LARCH_ABI_LP64        0x0003
+-#define EF_LARCH_ABI_LPX32       0x0002
+ #define EF_LARCH_ABI_LP32        0x0001
+ 
+ /* Loongarch specific dynamic relocations. */
+diff --git a/sysdeps/loongarch/dl-machine.h b/sysdeps/loongarch/dl-machine.h
+index ee66f879ff..dce85d1a8d 100644
+--- a/sysdeps/loongarch/dl-machine.h
++++ b/sysdeps/loongarch/dl-machine.h
+@@ -95,8 +95,6 @@ elf_machine_matches_host (const ElfW(Ehdr) *ehdr)
+ 
+ #ifdef _ABILP64
+   if ((ehdr->e_flags & EF_LARCH_ABI) != EF_LARCH_ABI_LP64)
+-#elif defined _ABILPX32
+-  if ((ehdr->e_flags & EF_LARCH_ABI) != EF_LARCH_ABI_LPX32)
+ #elif defined _ABILP32
+   if ((ehdr->e_flags & EF_LARCH_ABI) != EF_LARCH_ABI_LP32)
+ #else
+diff --git a/sysdeps/loongarch/nptl/bits/pthreadtypes-arch.h b/sysdeps/loongarch/nptl/bits/pthreadtypes-arch.h
+index 5a761355e2..aa63bce184 100644
+--- a/sysdeps/loongarch/nptl/bits/pthreadtypes-arch.h
++++ b/sysdeps/loongarch/nptl/bits/pthreadtypes-arch.h
+@@ -32,7 +32,7 @@
+ # define __SIZEOF_PTHREAD_BARRIER_T 		32
+ # define __SIZEOF_PTHREAD_BARRIERATTR_T 	 4
+ #else
+-# error "rv32i-based systems are not supported"
++# error "32-bit based systems are not supported"
+ #endif
+ 
+ #define __PTHREAD_COMPAT_PADDING_MID
+diff --git a/sysdeps/loongarch/sys/regdef.h b/sysdeps/loongarch/sys/regdef.h
+index 769784b86b..36f00939ca 100644
+--- a/sysdeps/loongarch/sys/regdef.h
++++ b/sysdeps/loongarch/sys/regdef.h
+@@ -72,10 +72,8 @@
+ # define fs6	$f30
+ # define fs7	$f31
+ 
+-#elif _LOONGARCH_SIM == _ABILPX32
+-# error ABILPX32
+ #elif _LOONGARCH_SIM == _ABILP32
+-# error ABILP32
++# error ABILP32 not support yet
+ #else
+ # error noABI
+ #endif
+-- 
+2.40.1
+

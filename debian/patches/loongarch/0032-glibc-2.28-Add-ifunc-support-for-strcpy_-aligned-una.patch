@@ -1,0 +1,878 @@
+From 4848d714c01648c333dd2246d1e66ead6b4285f3 Mon Sep 17 00:00:00 2001
+From: caiyinyu <caiyinyu@loongson.cn>
+Date: Sat, 18 Feb 2023 16:28:50 +0800
+Subject: [PATCH 32/44] glibc-2.28: Add ifunc support for
+ strcpy_{aligned,unaligned,lsx}
+
+Change-Id: I5bcf6efeaa69239c268bc2c31273b9ffc7dea388
+---
+ sysdeps/loongarch/lp64/multiarch/Makefile     |   3 +-
+ .../lp64/multiarch/ifunc-impl-list.c          |   6 +
+ .../loongarch/lp64/multiarch/strcpy-aligned.S |   8 +
+ sysdeps/loongarch/lp64/multiarch/strcpy-lsx.S | 177 +++++++++
+ .../lp64/multiarch/strcpy-unaligned.S         | 199 ++++++++++
+ sysdeps/loongarch/lp64/multiarch/strcpy.c     |  36 ++
+ sysdeps/loongarch/lp64/strcpy.S               | 368 ++++++++----------
+ 7 files changed, 594 insertions(+), 203 deletions(-)
+ create mode 100644 sysdeps/loongarch/lp64/multiarch/strcpy-aligned.S
+ create mode 100644 sysdeps/loongarch/lp64/multiarch/strcpy-lsx.S
+ create mode 100644 sysdeps/loongarch/lp64/multiarch/strcpy-unaligned.S
+ create mode 100644 sysdeps/loongarch/lp64/multiarch/strcpy.c
+
+diff --git a/sysdeps/loongarch/lp64/multiarch/Makefile b/sysdeps/loongarch/lp64/multiarch/Makefile
+index 97b20583cc..00e8f82584 100644
+--- a/sysdeps/loongarch/lp64/multiarch/Makefile
++++ b/sysdeps/loongarch/lp64/multiarch/Makefile
+@@ -11,5 +11,6 @@ sysdep_routines += memcpy-aligned memcpy-unaligned memcpy-lasx \
+ 		   strlen-aligned strlen-unaligned strlen-lsx \
+ 		   strnlen-aligned strnlen-unaligned strnlen-lsx \
+ 		   strchrnul-aligned strchrnul-unaligned strchrnul-lsx \
+-		   strncmp-aligned strncmp-unaligned strncmp-lsx
++		   strncmp-aligned strncmp-unaligned strncmp-lsx \
++		   strcpy-aligned strcpy-unaligned strcpy-lsx
+ endif
+diff --git a/sysdeps/loongarch/lp64/multiarch/ifunc-impl-list.c b/sysdeps/loongarch/lp64/multiarch/ifunc-impl-list.c
+index 1ec21318ba..ccd0924aa3 100644
+--- a/sysdeps/loongarch/lp64/multiarch/ifunc-impl-list.c
++++ b/sysdeps/loongarch/lp64/multiarch/ifunc-impl-list.c
+@@ -110,6 +110,12 @@ __libc_ifunc_impl_list (const char *name, struct libc_ifunc_impl *array,
+ 	      IFUNC_IMPL_ADD (array, i, strncmp, 1, __strncmp_unaligned)
+ 	      )
+ 
++  IFUNC_IMPL (i, name, strcpy,
++	      IFUNC_IMPL_ADD (array, i, strcpy, 1, __strcpy_lsx)
++	      IFUNC_IMPL_ADD (array, i, strcpy, 1, __strcpy_aligned)
++	      IFUNC_IMPL_ADD (array, i, strcpy, 1, __strcpy_unaligned)
++	      )
++
+   return i;
+ }
+ 
+diff --git a/sysdeps/loongarch/lp64/multiarch/strcpy-aligned.S b/sysdeps/loongarch/lp64/multiarch/strcpy-aligned.S
+new file mode 100644
+index 0000000000..4860398b51
+--- /dev/null
++++ b/sysdeps/loongarch/lp64/multiarch/strcpy-aligned.S
+@@ -0,0 +1,8 @@
++
++#if IS_IN (libc)
++
++#define STRCPY __strcpy_aligned
++
++#endif
++
++#include "../strcpy.S"
+diff --git a/sysdeps/loongarch/lp64/multiarch/strcpy-lsx.S b/sysdeps/loongarch/lp64/multiarch/strcpy-lsx.S
+new file mode 100644
+index 0000000000..bbc5c78d57
+--- /dev/null
++++ b/sysdeps/loongarch/lp64/multiarch/strcpy-lsx.S
+@@ -0,0 +1,177 @@
++#ifdef _LIBC
++#include <sysdep.h>
++#include <sys/regdef.h>
++#include <sys/asm.h>
++#else
++#include <sys/asm.h>
++#include <sys/regdef.h>
++#endif
++
++#if IS_IN (libc)
++
++#define STRCPY __strcpy_lsx
++
++/* int strcpy (const char *s1, const char *s2); */
++
++L(magic_num):
++    .align          6
++    .dword          0x0706050403020100
++    .dword          0x0f0e0d0c0b0a0908
++    nop
++    nop
++    nop
++ENTRY_NO_ALIGN(STRCPY)
++    pcaddi          t0, -7
++
++    andi            a4, a1, 0xf
++    vld             $vr1, t0, 0
++    move            a2, a0
++    beqz            a4, L(load_start)
++
++    xor             t0, a1, a4
++    vld             $vr0, t0, 0
++    vreplgr2vr.b    $vr2, a4
++    vadd.b          $vr2, $vr2, $vr1
++
++
++    vshuf.b         $vr0, $vr2, $vr0, $vr2
++    vsetanyeqz.b    $fcc0, $vr0
++    bcnez           $fcc0, L(end)
++L(load_start):
++    vld             $vr0, a1, 0
++
++    li.d            t1, 16
++    andi            a3, a0, 0xf
++    vsetanyeqz.b    $fcc0, $vr0
++    sub.d           t0, t1, a3
++
++    bcnez           $fcc0, L(end)
++    add.d           a1, a1, t0
++    vst             $vr0, a2, 0
++    add.d           a2, a2, t0
++
++    bne             a3, a4, L(unaligned)
++    vld             $vr0, a1, 0
++    vsetanyeqz.b    $fcc0, $vr0
++    bcnez           $fcc0, L(end)
++
++
++L(loop):
++    vst             $vr0, a2, 0
++    vld             $vr0, a1, 16
++    addi.d          a2, a2, 16
++    addi.d          a1, a1, 16
++
++    vsetanyeqz.b    $fcc0, $vr0
++    bceqz           $fcc0, L(loop)
++    vseqi.b         $vr1, $vr0, 0
++    vfrstpi.b       $vr1, $vr1, 0
++
++    vpickve2gr.bu   t0, $vr1, 0
++    add.d           a1, a1, t0
++    vld             $vr0, a1, -15
++    add.d           a2, a2, t0
++
++    vst             $vr0, a2, -15
++    jr              ra
++L(end):
++    vseqi.b         $vr1, $vr0, 0
++    vfrstpi.b       $vr1, $vr1, 0
++
++
++    vpickve2gr.bu   t0, $vr1, 0
++    addi.d          t0, t0, 1
++L(end_16):
++    andi            t1, t0, 16
++    beqz            t1, L(end_8)
++
++    vst             $vr0, a2, 0
++    jr              ra
++L(end_8):
++    andi            t2, t0, 8
++    andi            t3, t0, 4
++
++    andi            t4, t0, 2
++    andi            t5, t0, 1
++    beqz            t2, L(end_4)
++    vstelm.d        $vr0, a2, 0, 0
++
++    addi.d          a2, a2, 8
++    vbsrl.v         $vr0, $vr0, 8
++L(end_4):
++    beqz            t3, L(end_2)
++    vstelm.w        $vr0, a2, 0, 0
++
++
++    addi.d          a2, a2, 4
++    vbsrl.v         $vr0, $vr0, 4
++L(end_2):
++    beqz            t4, L(end_1)
++    vstelm.h        $vr0, a2, 0, 0
++
++    addi.d          a2, a2, 2
++    vbsrl.v         $vr0, $vr0, 2
++L(end_1):
++    beqz            t5, L(out)
++    vstelm.b        $vr0, a2, 0, 0
++
++L(out):
++    jr              ra
++L(unaligned):
++    andi           a3, a1, 0xf
++    bstrins.d      a1, zero, 3, 0
++    vld            $vr2, a1, 0
++
++    vreplgr2vr.b   $vr3, a3
++    vslt.b         $vr4, $vr1, $vr3
++    vor.v          $vr0, $vr2, $vr4
++    vsetanyeqz.b   $fcc0, $vr0
++
++
++    bcnez          $fcc0, L(un_first_end)
++    vld            $vr0, a1, 16
++    vadd.b         $vr3, $vr3, $vr1
++    addi.d         a1, a1, 16
++
++    vshuf.b        $vr4, $vr0, $vr2, $vr3
++    vsetanyeqz.b   $fcc0, $vr0
++    bcnez          $fcc0, L(un_end)
++L(un_loop):
++    vor.v          $vr2, $vr0, $vr0
++
++    vld            $vr0, a1, 16
++    vst            $vr4, a2, 0
++    addi.d         a1, a1, 16
++    addi.d         a2, a2, 16
++
++    vshuf.b        $vr4, $vr0, $vr2, $vr3
++    vsetanyeqz.b   $fcc0, $vr0
++    bceqz          $fcc0, L(un_loop)
++L(un_end):
++    vsetanyeqz.b    $fcc0, $vr4
++
++
++    bcnez           $fcc0, 1f
++    vst             $vr4, a2, 0
++1:
++    vseqi.b         $vr1, $vr0, 0
++    vfrstpi.b       $vr1, $vr1, 0
++
++    vpickve2gr.bu   t0, $vr1, 0
++    add.d           a1, a1, t0
++    vld             $vr0, a1, -15
++    add.d           a2, a2, t0
++
++    sub.d           a2, a2, a3
++    vst             $vr0, a2, 1
++    jr              ra
++L(un_first_end):
++    addi.d          a2, a2, -16
++    b               1b
++END(STRCPY)
++
++#ifdef _LIBC
++libc_hidden_builtin_def (STRCPY)
++#endif
++
++#endif
+diff --git a/sysdeps/loongarch/lp64/multiarch/strcpy-unaligned.S b/sysdeps/loongarch/lp64/multiarch/strcpy-unaligned.S
+new file mode 100644
+index 0000000000..449733cba6
+--- /dev/null
++++ b/sysdeps/loongarch/lp64/multiarch/strcpy-unaligned.S
+@@ -0,0 +1,199 @@
++/* Copyright 2016 Loongson Technology Corporation Limited  */
++
++/* Author: Huang Pei huangpei@loongson.cn.
++ * ISA: MIPS64R2
++ * ABI: N64
++ * basic algorithm :
++    +. if src aligned. just do the copy loop. if not, do the cross page check and copy one double word.
++       Then move src to aligned.
++    +. if (v0 - 0x0101010101010101) & (~v0) & 0x8080808080808080 != 0, v0 has
++       one byte is \0, else has no \0
++*/
++
++#ifdef _LIBC
++#include <sysdep.h>
++#include <sys/regdef.h>
++#include <sys/asm.h>
++#else
++#include <sys/asm.h>
++#include <sys/regdef.h>
++#endif
++
++#if IS_IN (libc)
++
++#define STRCPY __strcpy_unaligned
++
++#define REP8_01 0x0101010101010101
++#define REP8_7f 0x7f7f7f7f7f7f7f7f
++#define REP8_80 0x8080808080808080
++
++/* Parameters and Results */
++#define dest	a0
++#define	src	a1
++#define result	v0
++// Note: v0 = a0 in N64 ABI
++
++
++/* Internal variable */
++#define data		t0
++#define	data1		t1
++#define	has_nul		t2
++#define	diff		t3
++#define syndrome	t4
++#define zeroones	t5
++#define	sevenf		t6
++#define pos		t7
++#define dest_backup	t8
++#define tmp1		a4
++#define	tmp2		a5
++#define	tmp3		a6
++#define dest_off    	a2
++#define src_off     	a3
++#define tmp4        	a7
++
++/* rd <- if rc then ra else rb
++    will destroy tmp3
++*/
++#define CONDITIONSEL(rd,rc,ra,rb)\
++        masknez tmp3, rb, rc;\
++        maskeqz rd,   ra, rc;\
++        or      rd,   rd, tmp3
++
++/* int strcpy (const char *s1, const char *s2); */
++
++LEAF(STRCPY)
++	.align		4
++    	move        	dest_backup, dest
++    	lu12i.w     	zeroones, 0x01010
++    	lu12i.w     	sevenf, 0x7f7f7
++    	ori         	zeroones, zeroones, 0x101
++    	ori         	sevenf, sevenf, 0xf7f
++    	bstrins.d   	zeroones, zeroones, 63, 32
++    	bstrins.d   	sevenf, sevenf, 63, 32
++    	andi        	src_off, src, 0x7
++	beqz		src_off, strcpy_loop_aligned_1
++	b		strcpy_mutual_align
++strcpy_loop_aligned:
++    	st.d        	data, dest, 0
++    	addi.d      	dest, dest, 8
++strcpy_loop_aligned_1:
++	ld.d		data, src, 0
++	addi.d		src, src, 8
++strcpy_start_realigned:
++	sub.d		tmp1, data, zeroones
++	or		tmp2, data, sevenf
++	andn		has_nul, tmp1, tmp2
++	beqz		has_nul, strcpy_loop_aligned
++
++strcpy_end:
++	ctz.d		pos, has_nul
++	srli.d		pos, pos, 3
++	addi.d		pos, pos, 1
++/*  Do 8/4/2/1 strcpy based on pos value.
++    pos value is the number of bytes to be copied
++    the bytes include the final \0 so the max length is 8 and the min length is 1.
++ */
++
++strcpy_end_8:
++    	andi        	tmp1, pos, 0x8
++    	beqz        	tmp1, strcpy_end_4
++    	st.d        	data, dest, 0
++    	move        	dest, dest_backup
++    	jr		ra
++strcpy_end_4:
++    	andi        	tmp1, pos, 0x4
++    	beqz        	tmp1, strcpy_end_2
++    	st.w        	data, dest, 0
++    	srli.d      	data, data, 32
++    	addi.d      	dest, dest, 4
++strcpy_end_2:
++    	andi        	tmp1, pos, 0x2
++    	beqz        	tmp1, strcpy_end_1
++    	st.h        	data, dest, 0
++    	srli.d      	data, data, 16
++    	addi.d      	dest, dest, 2
++strcpy_end_1:
++    	andi        	tmp1, pos, 0x1
++    	beqz        	tmp1, strcpy_end_ret
++    	st.b        	data, dest, 0
++strcpy_end_ret:
++    	move        	result, dest_backup
++    	jr	    	ra
++
++
++strcpy_mutual_align:
++/*  Check if around src page bound.
++    if not go to page cross ok.
++    if it is, do further check.
++    use tmp2 to accelerate.  */
++
++    	li.w        	tmp2, 0xff8
++    	andi        	tmp1, src,  0xff8
++    	beq         	tmp1, tmp2, strcpy_page_cross
++
++strcpy_page_cross_ok:
++/*
++    Load a misaligned double word and check if has \0
++    If no, do a misaligned double word paste.
++    If yes, calculate the number of avaliable bytes,
++    then jump to 4/2/1 end.
++*/
++	ld.d		data, src, 0
++	sub.d		tmp1, data, zeroones
++	or		tmp2, data, sevenf
++	andn		has_nul, tmp1, tmp2
++	bnez    	has_nul, strcpy_end
++strcpy_mutual_align_finish:
++/*
++    Before jump back to align loop, make dest/src aligned.
++    This will cause a duplicated paste for several bytes between
++    the first double word and the second double word,
++    but should not bring a problem.
++*/
++    	li.w		tmp1, 8
++    	st.d        	data, dest, 0
++    	sub.d       	tmp1, tmp1, src_off
++    	add.d       	src,  src,  tmp1
++    	add.d       	dest, dest, tmp1
++
++	b		strcpy_loop_aligned_1
++
++strcpy_page_cross:
++/*
++    ld.d from aligned address(src & ~0x7).
++    check if high bytes have \0.
++    it not, go back to page cross ok,
++    since the string is supposed to cross the page bound in such situation.
++    if it is, do a srl for data to make it seems like a direct double word from src,
++    then go to 4/2/1 strcpy end.
++
++    tmp4 is 0xffff...ffff mask
++    tmp2 demonstrate the bytes to be masked
++    tmp2 = src_off << 3
++    data = data >> (src_off * 8) | -1 << (64 - src_off * 8)
++    and
++    -1 << (64 - src_off * 8) ->  ~(-1 >> (src_off * 8))
++*/
++
++    	li.w		tmp1, 0x7
++    	andn        	tmp3, src,  tmp1
++    	ld.d        	data, tmp3, 0
++    	li.w		tmp4, -1
++    	slli.d      	tmp2, src_off, 3
++    	srl.d       	tmp4, tmp4, tmp2
++    	srl.d       	data, data, tmp2
++    	nor         	tmp4, tmp4, zero
++    	or          	data, data, tmp4
++    	sub.d		tmp1, data, zeroones
++	or		tmp2, data, sevenf
++	andn		has_nul, tmp1, tmp2
++	beqz		has_nul, strcpy_page_cross_ok
++	b		strcpy_end
++END(STRCPY)
++#ifndef ANDROID_CHANGES
++#ifdef _LIBC
++libc_hidden_builtin_def (STRCPY)
++#endif
++#endif
++
++#endif
+diff --git a/sysdeps/loongarch/lp64/multiarch/strcpy.c b/sysdeps/loongarch/lp64/multiarch/strcpy.c
+new file mode 100644
+index 0000000000..779cd6b6f6
+--- /dev/null
++++ b/sysdeps/loongarch/lp64/multiarch/strcpy.c
+@@ -0,0 +1,36 @@
++/* Multiple versions of strcpy.
++   All versions must be listed in ifunc-impl-list.c.
++   Copyright (C) 2017-2023 Free Software Foundation, Inc.
++   This file is part of the GNU C Library.
++
++   The GNU C Library is free software; you can redistribute it and/or
++   modify it under the terms of the GNU Lesser General Public
++   License as published by the Free Software Foundation; either
++   version 2.1 of the License, or (at your option) any later version.
++
++   The GNU C Library is distributed in the hope that it will be useful,
++   but WITHOUT ANY WARRANTY; without even the implied warranty of
++   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++   Lesser General Public License for more details.
++
++   You should have received a copy of the GNU Lesser General Public
++   License along with the GNU C Library; if not, see
++   <https://www.gnu.org/licenses/>.  */
++
++/* Define multiple versions only for the definition in libc.  */
++#if IS_IN (libc)
++# define strcpy __redirect_strcpy
++# include <string.h>
++# undef strcpy
++
++# define SYMBOL_NAME strcpy
++# include "ifunc-strchr.h"
++
++libc_ifunc_redirected (__redirect_strcpy, strcpy, IFUNC_SELECTOR ());
++
++# ifdef SHARED
++__hidden_ver1 (strcpy, __GI_strcpy, __redirect_strcpy)
++  __attribute__ ((visibility ("hidden")));
++# endif
++#endif
++
+diff --git a/sysdeps/loongarch/lp64/strcpy.S b/sysdeps/loongarch/lp64/strcpy.S
+index ce39e5a1a8..c6fe74cb7e 100644
+--- a/sysdeps/loongarch/lp64/strcpy.S
++++ b/sysdeps/loongarch/lp64/strcpy.S
+@@ -1,210 +1,174 @@
+-/* Copyright 2016 Loongson Technology Corporation Limited  */
+-
+-/* Author: Huang Pei huangpei@loongson.cn */
+-
+-/*
+- * ISA: MIPS64R2
+- * ABI: N64
+- */
+-
+-/* basic algorithm :
+-
+-    +.  if src aligned. just do the copy loop. if not, do the cross page check and copy one double word.
+-
+-        Then move src to aligned.
+-
+-	+.	if (v0 - 0x0101010101010101) & (~v0) & 0x8080808080808080 != 0, v0 has
+-		one byte is \0, else has no \0
+-
+-
+-*/
+-
+-
++#ifdef _LIBC
++#include <sysdep.h>
++#include <sys/regdef.h>
++#include <sys/asm.h>
++#else
+ #include <sys/asm.h>
+ #include <sys/regdef.h>
++#endif
+ 
+-
+-#define STRCPY	strcpy
+-
+-
+-#define REP8_01 0x0101010101010101
+-#define REP8_7f 0x7f7f7f7f7f7f7f7f
+-#define REP8_80 0x8080808080808080
+-
+-/* Parameters and Results */
+-#define dest	a0
+-#define	src	a1
+-#define result	v0
+-// Note: v0 = a0 in N64 ABI
+-
+-
+-/* Internal variable */
+-#define data		t0
+-#define	data1		t1
+-#define	has_nul		t2
+-#define	diff		t3
+-#define syndrome	t4
+-#define zeroones	t5
+-#define	sevenf		t6
+-#define pos		t7
+-#define dest_backup	t8
+-#define tmp1		a4
+-#define	tmp2		a5
+-#define	tmp3		a6
+-#define dest_off    a2
+-#define src_off     a3
+-#define tmp4        a7
+-
+-/* rd <- if rc then ra else rb
+-    will destroy tmp3
+-*/
+-#define CONDITIONSEL(rd,rc,ra,rb)\
+-        masknez tmp3, rb, rc;\
+-        maskeqz rd,   ra, rc;\
+-        or      rd,   rd, tmp3
+-
+-
+-
+-/* int strcpy (const char *s1, const char *s2); */
++#ifndef STRCPY
++#define STRCPY  strcpy
++#endif
+ 
+ LEAF(STRCPY)
+-	.align		4
+-
+-    move        dest_backup, dest
+-    lu12i.w     zeroones, 0x01010
+-    lu12i.w     sevenf, 0x7f7f7
+-    ori         zeroones, zeroones, 0x101
+-    ori         sevenf, sevenf, 0xf7f
+-    bstrins.d   zeroones, zeroones, 63, 32
+-    bstrins.d   sevenf, sevenf, 63, 32
+-    andi        src_off, src, 0x7
+-	beqz		src_off, strcpy_loop_aligned_1
+-    b           strcpy_mutual_align
+-strcpy_loop_aligned:
+-    st.d        data, dest, 0
+-    addi.d      dest, dest, 8
+-strcpy_loop_aligned_1:
+-	ld.d		data, src, 0
+-    addi.d      src, src, 8
+-strcpy_start_realigned:
+-	sub.d		tmp1, data, zeroones
+-	or		    tmp2, data, sevenf
+-	andn		has_nul, tmp1, tmp2
+-	beqz		has_nul, strcpy_loop_aligned
+-
+-strcpy_end:
+-
+-/*
+-8 4 2 1
+-*/
+-	ctz.d		pos, has_nul
+-	srli.d		pos, pos, 3
+-    addi.d      pos, pos, 1
+-/*
+-    Do 8/4/2/1 strcpy based on pos value.
+-    pos value is the number of bytes to be copied
+-    the bytes include the final \0 so the max length is 8 and the min length is 1
+-*/
+-
+-strcpy_end_8:
+-    andi        tmp1, pos, 0x8
+-    beqz        tmp1, strcpy_end_4
+-    st.d        data, dest, 0
+-    move        dest, dest_backup
+-    jr  ra
+-strcpy_end_4:
+-    andi        tmp1, pos, 0x4
+-    beqz        tmp1, strcpy_end_2
+-    st.w        data, dest, 0
+-    srli.d      data, data, 32
+-    addi.d      dest, dest, 4
+-strcpy_end_2:
+-    andi        tmp1, pos, 0x2
+-    beqz        tmp1, strcpy_end_1
+-    st.h        data, dest, 0
+-    srli.d      data, data, 16
+-    addi.d      dest, dest, 2
+-strcpy_end_1:
+-    andi        tmp1, pos, 0x1
+-    beqz        tmp1, strcpy_end_ret
+-    st.b        data, dest, 0
+-strcpy_end_ret:
+-    move        result, dest_backup
+-    jr  ra
+-
+-
+-strcpy_mutual_align:
+-/*
+-    Check if around src page bound.
+-    if not go to page cross ok.
+-    if it is, do further check.
+-    use tmp2 to accelerate.
+-*/
+-
+-    li.w          tmp2, 0xff8
+-    andi        tmp1, src,  0xff8
+-    beq         tmp1, tmp2, strcpy_page_cross
+-
+-strcpy_page_cross_ok:
+-/*
+-    Load a misaligned double word and check if has \0
+-    If no, do a misaligned double word paste.
+-    If yes, calculate the number of avaliable bytes,
+-    then jump to 4/2/1 end.
+-*/
+-    ld.d        data, src, 0
+-	sub.d		tmp1, data, zeroones
+-	or		    tmp2, data, sevenf
+-	andn		has_nul, tmp1, tmp2
+-    bnez        has_nul, strcpy_end
+-strcpy_mutual_align_finish:
+-/*
+-    Before jump back to align loop, make dest/src aligned.
+-    This will cause a duplicated paste for several bytes between the first double word and the second double word,
+-    but should not bring a problem.
+-*/
+-    li.w          tmp1, 8
+-    st.d        data, dest, 0
+-    sub.d       tmp1, tmp1, src_off
+-    add.d       src,  src,  tmp1
+-    add.d       dest, dest, tmp1
+-
+-	b		strcpy_loop_aligned_1
+-
+-strcpy_page_cross:
+-/*
+-    ld.d from aligned address(src & ~0x7).
+-    check if high bytes have \0.
+-    it not, go back to page cross ok,
+-    since the string is supposed to cross the page bound in such situation.
+-    if it is, do a srl for data to make it seems like a direct double word from src,
+-    then go to 4/2/1 strcpy end.
+-
+-    tmp4 is 0xffff...ffff mask
+-    tmp2 demonstrate the bytes to be masked
+-    tmp2 = src_off << 3
+-    data = data >> (src_off * 8) | -1 << (64 - src_off * 8)
+-    and
+-    -1 << (64 - src_off * 8) ->  ~(-1 >> (src_off * 8))
+-
+-*/
+-    li.w          tmp1, 0x7
+-    andn        tmp3, src,  tmp1
+-    ld.d        data, tmp3, 0
+-    li.w          tmp4, -1
+-    slli.d      tmp2, src_off, 3
+-    srl.d       tmp4, tmp4, tmp2
+-    srl.d       data, data, tmp2
+-    nor         tmp4, tmp4, zero
+-    or          data, data, tmp4
+-    sub.d		tmp1, data, zeroones
+-	or		    tmp2, data, sevenf
+-	andn		has_nul, tmp1, tmp2
+-	beqz		has_nul, strcpy_page_cross_ok
+-    b           strcpy_end
++    .align      6
++    andi        a3, a0, 0x7
++    move        a2, a0
++    beqz        a3, L(dest_align)
++    sub.d       a5, a1, a3
++    addi.d      a5, a5, 8
++
++L(make_dest_align):
++    ld.b        t0, a1, 0
++    addi.d      a1, a1, 1
++    st.b        t0, a2, 0
++    beqz        t0, L(al_out)
++
++    addi.d      a2, a2, 1
++    bne         a1, a5, L(make_dest_align)
++
++L(dest_align):
++    andi        a4, a1, 7
++    bstrins.d   a1, zero, 2, 0
++
++    lu12i.w     t5, 0x1010
++    ld.d        t0, a1, 0
++    ori         t5, t5, 0x101
++    bstrins.d   t5, t5, 63, 32
++
++    slli.d      t6, t5, 0x7
++    bnez        a4, L(unalign)
++    sub.d       t1, t0, t5
++    andn        t2, t6, t0
++
++    and         t3, t1, t2
++    bnez        t3, L(al_end)
++
++L(al_loop):
++    st.d        t0, a2, 0
++    ld.d        t0, a1, 8
++
++    addi.d      a1, a1, 8
++    addi.d      a2, a2, 8
++    sub.d       t1, t0, t5
++    andn        t2, t6, t0
++
++    and         t3, t1, t2
++    beqz        t3, L(al_loop)
++
++L(al_end):
++    ctz.d       t1, t3
++    srli.d      t1, t1, 3
++    addi.d      t1, t1, 1 # add 1, since '\0' needs to be copied to dest
++
++    andi        a3, t1, 8
++    andi        a4, t1, 4
++    andi        a5, t1, 2
++    andi        a6, t1, 1
++
++L(al_end_8):
++    beqz        a3, L(al_end_4)
++    st.d        t0, a2, 0
++    jr          ra
++L(al_end_4):
++    beqz        a4, L(al_end_2)
++    st.w        t0, a2, 0
++    addi.d      a2, a2, 4
++    srli.d      t0, t0, 32
++L(al_end_2):
++    beqz        a5, L(al_end_1)
++    st.h        t0, a2, 0
++    addi.d      a2, a2, 2
++    srli.d      t0, t0, 16
++L(al_end_1):
++    beqz        a6, L(al_out)
++    st.b        t0, a2, 0
++L(al_out):
++    jr          ra
++
++L(unalign):
++    slli.d      a5, a4, 3
++    li.d        t1, -1
++    sub.d       a6, zero, a5
++
++    srl.d       a7, t0, a5
++    sll.d       t7, t1, a6
++
++    or          t0, a7, t7
++    sub.d       t1, t0, t5
++    andn        t2, t6, t0
++    and         t3, t1, t2
++
++    bnez        t3, L(un_end)
++
++    ld.d        t4, a1, 8
++
++    sub.d       t1, t4, t5
++    andn        t2, t6, t4
++    sll.d       t0, t4, a6
++    and         t3, t1, t2
++
++    or          t0, t0, a7
++    bnez        t3, L(un_end_with_remaining)
++
++L(un_loop):
++    srl.d       a7, t4, a5
++
++    ld.d        t4, a1, 16
++    addi.d      a1, a1, 8
++
++    st.d        t0, a2, 0
++    addi.d      a2, a2, 8
++
++    sub.d       t1, t4, t5
++    andn        t2, t6, t4
++    sll.d       t0, t4, a6
++    and         t3, t1, t2
++
++    or          t0, t0, a7
++    beqz        t3, L(un_loop)
++
++L(un_end_with_remaining):
++    ctz.d       t1, t3
++    srli.d      t1, t1, 3
++    addi.d      t1, t1, 1
++    sub.d       t1, t1, a4
++
++    blt         t1, zero, L(un_end_less_8)
++    st.d        t0, a2, 0
++    addi.d      a2, a2, 8
++    beqz        t1, L(un_out)
++    srl.d       t0, t4, a5  # get the remaining part
++    b           L(un_end_less_8)
++
++L(un_end):
++    ctz.d       t1, t3
++    srli.d      t1, t1, 3
++    addi.d      t1, t1, 1
++
++L(un_end_less_8):
++    andi        a4, t1, 4
++    andi        a5, t1, 2
++    andi        a6, t1, 1
++L(un_end_4):
++    beqz        a4, L(un_end_2)
++    st.w        t0, a2, 0
++    addi.d      a2, a2, 4
++    srli.d      t0, t0, 32
++L(un_end_2):
++    beqz        a5, L(un_end_1)
++    st.h        t0, a2, 0
++    addi.d      a2, a2, 2
++    srli.d      t0, t0, 16
++L(un_end_1):
++    beqz        a6, L(un_out)
++    st.b        t0, a2, 0
++L(un_out):
++    jr          ra
++
+ END(STRCPY)
+-#ifndef ANDROID_CHANGES
++
+ #ifdef _LIBC
+-libc_hidden_builtin_def (strcpy)
+-#endif
++libc_hidden_builtin_def (STRCPY)
+ #endif
+-- 
+2.20.1
+

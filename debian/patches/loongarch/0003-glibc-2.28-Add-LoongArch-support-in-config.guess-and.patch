@@ -1,0 +1,44 @@
+From 98c1372ef3eb6341da94031cdfcdcaf4c0e38ac6 Mon Sep 17 00:00:00 2001
+From: Xiaolin Tang <tangxiaolin@loongson.cn>
+Date: Mon, 31 Oct 2022 17:41:06 +0800
+Subject: [PATCH 03/44] glibc-2.28: Add LoongArch support in config.guess and
+ config.sub.
+
+       * scripts/config.guess: Add LoongArch support.
+       * scripts/config.sub: Likewise.
+
+Change-Id: I71cdfe89636bd928bac459849b7398d54f95b9fd
+---
+ scripts/config.guess | 3 +++
+ scripts/config.sub   | 1 +
+ 2 files changed, 4 insertions(+)
+
+diff --git a/scripts/config.guess b/scripts/config.guess
+index 588fe82a42..6cdfc4b361 100755
+--- a/scripts/config.guess
++++ b/scripts/config.guess
+@@ -957,6 +957,9 @@ EOF
+     k1om:Linux:*:*)
+ 	echo ${UNAME_MACHINE}-unknown-linux-${LIBC}
+ 	exit ;;
++    loongarch32:Linux:*:* | loongarch64:Linux:*:*)
++	echo ${UNAME_MACHINE}-unknown-linux-${LIBC}
++	exit ;;
+     m32r*:Linux:*:*)
+ 	echo ${UNAME_MACHINE}-unknown-linux-${LIBC}
+ 	exit ;;
+diff --git a/scripts/config.sub b/scripts/config.sub
+index 34e9313fc8..06897d9aa8 100755
+--- a/scripts/config.sub
++++ b/scripts/config.sub
+@@ -265,6 +265,7 @@ case $basic_machine in
+ 	| k1om \
+ 	| le32 | le64 \
+ 	| lm32 \
++        | loongarch32 | loongarch64 \
+ 	| m32c | m32r | m32rle | m68000 | m68k | m88k \
+ 	| maxq | mb | microblaze | microblazeel | mcore | mep | metag \
+ 	| mips | mipsbe | mipseb | mipsel | mipsle \
+-- 
+2.20.1
+

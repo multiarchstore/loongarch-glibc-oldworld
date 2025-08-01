@@ -1,0 +1,88 @@
+From 36ece75c31e98d75b75a884898c7ce3b10118507 Mon Sep 17 00:00:00 2001
+From: wanghongliang <wanghongliang@loongson.cn>
+Date: Thu, 20 Jan 2022 01:22:22 -0500
+Subject: [PATCH 1/3] glibc-2.28: sysvipc: Fix SEM_STAT_ANY kernel argument
+ pass.
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+upstream：
+https://sourceware.org/bugzilla/show_bug.cgi?id=26637
+https://sourceware.org/git/?p=glibc.git;a=commit;h=574500a108be
+Fixed on 2.33 (574500a108be1d2a6a0dc97a075c9e0a98371aba)
+
+test log:
+sudo ./runltp -f syscalls
+...
+cmdline="semctl09"
+contacts=""
+analysis=exit
+<<<test_output>>>
+tst_test.c:1428: TINFO: Timeout per run is 0h 05m 00s
+semctl09.c:79: TINFO: Test SYS_semctl syscall
+semctl09.c:144: TINFO: Test SEM_STAT_ANY with nobody user
+semctl09.c:167: TPASS: SEM_INFO returned valid index 0 to semid 327680
+semctl09.c:176: TPASS: Counted used = 1
+semctl09.c:124: TPASS: semset_cnt = 1
+semctl09.c:131: TPASS: sen_cnt = 2
+semctl09.c:144: TINFO: Test SEM_STAT_ANY with root user
+semctl09.c:167: TPASS: SEM_INFO returned valid index 0 to semid 327680
+semctl09.c:176: TPASS: Counted used = 1
+semctl09.c:124: TPASS: semset_cnt = 1
+semctl09.c:131: TPASS: sen_cnt = 2
+tst_test.c:1428: TINFO: Timeout per run is 0h 05m 00s
+semctl09.c:82: TINFO: Test libc semctl()
+semctl09.c:144: TINFO: Test SEM_STAT_ANY with nobody user
+semctl09.c:167: TPASS: SEM_INFO returned valid index 0 to semid 360448
+semctl09.c:176: TPASS: Counted used = 1
+semctl09.c:124: TPASS: semset_cnt = 1
+semctl09.c:131: TPASS: sen_cnt = 2
+semctl09.c:144: TINFO: Test SEM_STAT_ANY with root user
+semctl09.c:167: TPASS: SEM_INFO returned valid index 0 to semid 360448
+semctl09.c:176: TPASS: Counted used = 1
+semctl09.c:124: TPASS: semset_cnt = 1
+semctl09.c:131: TPASS: sen_cnt = 2
+
+Summary:
+passed   16
+failed   0
+broken   0
+skipped  0
+warnings 0
+<<<execution_status>>>
+initiation_status="ok"
+duration=0 termination_type=exited termination_id=0 corefile=no
+cutime=1 cstime=0
+<<<test_end>>>
+
+Change-Id: Ib0c27326b66c10bb7177be5f7933326b542ae2e7
+Signed-off-by: loongson <loongson@localhost.localdomain>
+Signed-off-by: wanghongliang <wanghongliang@loongson.cn>
+---
+ sysdeps/unix/sysv/linux/semctl.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/sysdeps/unix/sysv/linux/semctl.c b/sysdeps/unix/sysv/linux/semctl.c
+index e2925447eb..37a6878aec 100644
+--- a/sysdeps/unix/sysv/linux/semctl.c
++++ b/sysdeps/unix/sysv/linux/semctl.c
+@@ -51,6 +51,7 @@ __new_semctl (int semid, int semnum, int cmd, ...)
+     case IPC_STAT:      /* arg.buf */
+     case IPC_SET:
+     case SEM_STAT:
++    case SEM_STAT_ANY:
+     case IPC_INFO:      /* arg.__buf */
+     case SEM_INFO:
+       va_start (ap, cmd);
+@@ -89,6 +90,7 @@ __old_semctl (int semid, int semnum, int cmd, ...)
+     case SETALL:
+     case IPC_STAT:      /* arg.buf */
+     case IPC_SET:
++    case SEM_STAT_ANY:
+     case SEM_STAT:
+     case IPC_INFO:      /* arg.__buf */
+     case SEM_INFO:
+-- 
+2.20.1
+

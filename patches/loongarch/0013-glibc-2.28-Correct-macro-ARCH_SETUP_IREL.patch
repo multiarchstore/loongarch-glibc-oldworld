@@ -1,0 +1,39 @@
+From ffa283b106d8fe773205ee9e4f21e654ad02e3d5 Mon Sep 17 00:00:00 2001
+From: caiyinyu <caiyinyu@loongson.cn>
+Date: Sun, 15 Jan 2023 19:50:27 +0800
+Subject: [PATCH 13/44] glibc-2.28: Correct macro ARCH_SETUP_IREL.
+
+There are ifunc memcpy in ld.so and the function should be resolved
+correctly by setting ARCH_SETUP_IREL to apply_irel ().
+
+Change-Id: I2d896d7a44b6dc5f4ec98a632bf1c20f563baab1
+---
+ sysdeps/loongarch/libc-start.h | 8 ++++----
+ 1 file changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/sysdeps/loongarch/libc-start.h b/sysdeps/loongarch/libc-start.h
+index d35ed85ffd..7bbc658f0e 100644
+--- a/sysdeps/loongarch/libc-start.h
++++ b/sysdeps/loongarch/libc-start.h
+@@ -1,5 +1,5 @@
+-	/* X86 definitions for libc main startup.
+-   Copyright (C) 2018 Free Software Foundation, Inc.
++/* LoongArch definitions for libc main startup.
++   Copyright (C) 2023 Free Software Foundation, Inc.
+    This file is part of the GNU C Library.
+ 
+    The GNU C Library is free software; you can redistribute it and/or
+@@ -17,8 +17,8 @@
+    <http://www.gnu.org/licenses/>.  */
+ 
+ #ifndef SHARED
+-# define ARCH_SETUP_IREL()
+-# define ARCH_APPLY_IREL() apply_irel ()
++# define ARCH_SETUP_IREL()  apply_irel ()
++# define ARCH_APPLY_IREL()
+ # ifndef ARCH_SETUP_TLS
+ #  define ARCH_SETUP_TLS() __libc_setup_tls ()
+ # endif
+-- 
+2.20.1
+

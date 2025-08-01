@@ -1,0 +1,714 @@
+From 9f2ca7f1e298a7fde02b37465301d92c38b05dd3 Mon Sep 17 00:00:00 2001
+From: caiyinyu <caiyinyu@loongson.cn>
+Date: Wed, 15 Feb 2023 20:58:56 +0800
+Subject: [PATCH 21/44] glibc-2.28: Add ifunc support for mem{cpy,move}_lsx and
+ adjust related code.
+
+Change-Id: I716dd51192eb5f57b680bb25216eb621c605b635
+---
+ sysdeps/loongarch/lp64/multiarch/Makefile     |   2 +-
+ .../lp64/multiarch/ifunc-impl-list.c          |   4 +-
+ .../loongarch/lp64/multiarch/ifunc-memcpy.h   |   3 +
+ .../loongarch/lp64/multiarch/ifunc-memmove.h  |   5 +-
+ .../loongarch/lp64/multiarch/ifunc-memset.h   |  37 ++
+ sysdeps/loongarch/lp64/multiarch/memcpy-lsx.S |   1 +
+ .../lp64/multiarch/memmove-aligned.S          |   1 +
+ .../loongarch/lp64/multiarch/memmove-lsx.S    | 524 ++++++++++++++++++
+ sysdeps/loongarch/lp64/multiarch/memset.c     |   2 +-
+ 9 files changed, 575 insertions(+), 4 deletions(-)
+ create mode 100644 sysdeps/loongarch/lp64/multiarch/ifunc-memset.h
+ create mode 100644 sysdeps/loongarch/lp64/multiarch/memcpy-lsx.S
+ create mode 100644 sysdeps/loongarch/lp64/multiarch/memmove-aligned.S
+ create mode 100644 sysdeps/loongarch/lp64/multiarch/memmove-lsx.S
+
+diff --git a/sysdeps/loongarch/lp64/multiarch/Makefile b/sysdeps/loongarch/lp64/multiarch/Makefile
+index ed7eb937ad..8f39a08c0f 100644
+--- a/sysdeps/loongarch/lp64/multiarch/Makefile
++++ b/sysdeps/loongarch/lp64/multiarch/Makefile
+@@ -1,7 +1,7 @@
+ ifeq ($(subdir),string)
+ sysdep_routines += memcpy-aligned memcpy-unaligned memcpy-lasx \
+ 		   memset-aligned memset-unaligned memset-lasx \
+-		   memmove-unaligned \
++		   memmove-unaligned memmove-lsx \
+ 		   memchr-aligned memchr-lsx \
+ 		   memrchr-generic memrchr-lsx
+ endif
+diff --git a/sysdeps/loongarch/lp64/multiarch/ifunc-impl-list.c b/sysdeps/loongarch/lp64/multiarch/ifunc-impl-list.c
+index b0e541a949..7935526ae6 100644
+--- a/sysdeps/loongarch/lp64/multiarch/ifunc-impl-list.c
++++ b/sysdeps/loongarch/lp64/multiarch/ifunc-impl-list.c
+@@ -25,7 +25,7 @@
+ #include <stdio.h>
+ 
+ /* Maximum number of IFUNC implementations.  */
+-#define MAX_IFUNC	3
++#define MAX_IFUNC	4
+ 
+ size_t
+ __libc_ifunc_impl_list (const char *name, struct libc_ifunc_impl *array,
+@@ -37,11 +37,13 @@ __libc_ifunc_impl_list (const char *name, struct libc_ifunc_impl *array,
+ 
+   IFUNC_IMPL (i, name, memcpy,
+ 	      IFUNC_IMPL_ADD (array, i, memcpy, 1, __memcpy_lasx)
++	      IFUNC_IMPL_ADD (array, i, memcpy, 1, __memcpy_lsx)
+ 	      IFUNC_IMPL_ADD (array, i, memcpy, 1, __memcpy_aligned)
+ 	      IFUNC_IMPL_ADD (array, i, memcpy, 1, __memcpy_unaligned)
+ 	      )
+ 
+   IFUNC_IMPL (i, name, memmove,
++	      IFUNC_IMPL_ADD (array, i, memmove, 1, __memmove_lsx)
+ 	      IFUNC_IMPL_ADD (array, i, memmove, 1, __memmove_aligned)
+ 	      IFUNC_IMPL_ADD (array, i, memmove, 1, __memmove_unaligned)
+ 	      )
+diff --git a/sysdeps/loongarch/lp64/multiarch/ifunc-memcpy.h b/sysdeps/loongarch/lp64/multiarch/ifunc-memcpy.h
+index 234f636be9..61c009780c 100644
+--- a/sysdeps/loongarch/lp64/multiarch/ifunc-memcpy.h
++++ b/sysdeps/loongarch/lp64/multiarch/ifunc-memcpy.h
+@@ -20,6 +20,7 @@
+ #include <init-arch.h>
+ 
+ extern __typeof (REDIRECT_NAME) OPTIMIZE (lasx) attribute_hidden;
++extern __typeof (REDIRECT_NAME) OPTIMIZE (lsx) attribute_hidden;
+ extern __typeof (REDIRECT_NAME) OPTIMIZE (aligned) attribute_hidden;
+ extern __typeof (REDIRECT_NAME) OPTIMIZE (unaligned) attribute_hidden;
+ 
+@@ -30,6 +31,8 @@ IFUNC_SELECTOR (void)
+ 
+   if (SUPPORT_LASX)
+     return OPTIMIZE (lasx);
++  else if (SUPPORT_LSX)
++    return OPTIMIZE (lsx);
+   else if (SUPPORT_UAL)
+     return OPTIMIZE (unaligned);
+   else
+diff --git a/sysdeps/loongarch/lp64/multiarch/ifunc-memmove.h b/sysdeps/loongarch/lp64/multiarch/ifunc-memmove.h
+index a6854fe966..c5e4d8b604 100644
+--- a/sysdeps/loongarch/lp64/multiarch/ifunc-memmove.h
++++ b/sysdeps/loongarch/lp64/multiarch/ifunc-memmove.h
+@@ -1,4 +1,4 @@
+-/* Common definition for memcpy, and memset implementation.
++/* Common definition for memmove implementation.
+    All versions must be listed in ifunc-impl-list.c.
+    Copyright (C) 2017-2022 Free Software Foundation, Inc.
+    This file is part of the GNU C Library.
+@@ -19,6 +19,7 @@
+ 
+ #include <init-arch.h>
+ 
++extern __typeof (REDIRECT_NAME) OPTIMIZE (lsx) attribute_hidden;
+ extern __typeof (REDIRECT_NAME) OPTIMIZE (aligned) attribute_hidden;
+ extern __typeof (REDIRECT_NAME) OPTIMIZE (unaligned) attribute_hidden;
+ 
+@@ -27,6 +28,8 @@ IFUNC_SELECTOR (void)
+ {
+   INIT_ARCH();
+ 
++  if (SUPPORT_LSX)
++    return OPTIMIZE (lsx);
+   if (SUPPORT_UAL)
+     return OPTIMIZE (unaligned);
+   else
+diff --git a/sysdeps/loongarch/lp64/multiarch/ifunc-memset.h b/sysdeps/loongarch/lp64/multiarch/ifunc-memset.h
+new file mode 100644
+index 0000000000..234f636be9
+--- /dev/null
++++ b/sysdeps/loongarch/lp64/multiarch/ifunc-memset.h
+@@ -0,0 +1,37 @@
++/* Common definition for memcpy, and memset implementation.
++   All versions must be listed in ifunc-impl-list.c.
++   Copyright (C) 2017-2022 Free Software Foundation, Inc.
++   This file is part of the GNU C Library.
++
++   The GNU C Library is free software; you can redistribute it and/or
++   modify it under the terms of the GNU Lesser General Public
++   License as published by the Free Software Foundation; either
++   version 2.1 of the License, or (at your option) any later version.
++
++   The GNU C Library is distributed in the hope that it will be useful,
++   but WITHOUT ANY WARRANTY; without even the implied warranty of
++   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++   Lesser General Public License for more details.
++
++   You should have received a copy of the GNU Lesser General Public
++   License along with the GNU C Library; if not, see
++   <https://www.gnu.org/licenses/>.  */
++
++#include <init-arch.h>
++
++extern __typeof (REDIRECT_NAME) OPTIMIZE (lasx) attribute_hidden;
++extern __typeof (REDIRECT_NAME) OPTIMIZE (aligned) attribute_hidden;
++extern __typeof (REDIRECT_NAME) OPTIMIZE (unaligned) attribute_hidden;
++
++static inline void *
++IFUNC_SELECTOR (void)
++{
++  INIT_ARCH();
++
++  if (SUPPORT_LASX)
++    return OPTIMIZE (lasx);
++  else if (SUPPORT_UAL)
++    return OPTIMIZE (unaligned);
++  else
++    return OPTIMIZE (aligned);
++}
+diff --git a/sysdeps/loongarch/lp64/multiarch/memcpy-lsx.S b/sysdeps/loongarch/lp64/multiarch/memcpy-lsx.S
+new file mode 100644
+index 0000000000..ec8e783ad5
+--- /dev/null
++++ b/sysdeps/loongarch/lp64/multiarch/memcpy-lsx.S
+@@ -0,0 +1 @@
++/* memcpy_lsx is part of memmove_lsx, see memmove-lsx.S.  */
+diff --git a/sysdeps/loongarch/lp64/multiarch/memmove-aligned.S b/sysdeps/loongarch/lp64/multiarch/memmove-aligned.S
+new file mode 100644
+index 0000000000..bcd37a0e88
+--- /dev/null
++++ b/sysdeps/loongarch/lp64/multiarch/memmove-aligned.S
+@@ -0,0 +1 @@
++/* memmove_aligned is part of memcpy_aligned, see memcpy-aligned.S.  */
+diff --git a/sysdeps/loongarch/lp64/multiarch/memmove-lsx.S b/sysdeps/loongarch/lp64/multiarch/memmove-lsx.S
+new file mode 100644
+index 0000000000..26babad401
+--- /dev/null
++++ b/sysdeps/loongarch/lp64/multiarch/memmove-lsx.S
+@@ -0,0 +1,524 @@
++#ifdef _LIBC
++#include <sysdep.h>
++#include <sys/regdef.h>
++#include <sys/asm.h>
++#else
++#include <regdef.h>
++#include <sys/asm.h>
++#endif
++
++#if IS_IN (libc)
++
++#define MEMCPY_NAME __memcpy_lsx
++#define MEMMOVE_NAME __memmove_lsx
++
++LEAF(MEMCPY_NAME)
++    .align          6
++    li.d            t6, 16
++    add.d           a3, a0, a2
++    add.d           a4, a1, a2
++    bgeu            t6, a2, L(less_16bytes) # a2 <= 16
++
++    li.d            t8, 64
++    li.d            t7, 32
++    bltu            t8, a2, L(copy_long)   # a2 > 64
++    bltu            t7, a2, L(more_32bytes) # a2 > 32
++
++    vld             $vr0, a1, 0
++    vld             $vr1, a4, -16
++    vst             $vr0, a0, 0
++    vst             $vr1, a3, -16
++
++    jr              ra
++L(more_32bytes):
++    vld             $vr0, a1, 0
++    vld             $vr1, a1, 16
++    vld             $vr2, a4, -32
++
++
++    vld             $vr3, a4, -16
++    vst             $vr0, a0, 0
++    vst             $vr1, a0, 16
++    vst             $vr2, a3, -32
++
++    vst             $vr3, a3, -16
++    jr              ra
++L(less_16bytes):
++    srli.d          t0, a2, 3
++    beqz            t0, L(less_8bytes)
++
++    vldrepl.d       $vr0, a1, 0
++    vldrepl.d       $vr1, a4, -8
++    vstelm.d        $vr0, a0, 0, 0
++    vstelm.d        $vr1, a3, -8, 0
++
++    jr              ra
++L(less_8bytes):
++    srli.d          t0, a2, 2
++    beqz            t0, L(less_4bytes)
++    vldrepl.w       $vr0, a1, 0
++
++
++    vldrepl.w       $vr1, a4, -4
++    vstelm.w        $vr0, a0, 0, 0
++    vstelm.w        $vr1, a3, -4, 0
++    jr              ra
++
++L(less_4bytes):
++    srli.d          t0, a2, 1
++    beqz            t0, L(less_2bytes)
++    vldrepl.h       $vr0, a1, 0
++    vldrepl.h       $vr1, a4, -2
++
++    vstelm.h        $vr0, a0, 0, 0
++    vstelm.h        $vr1, a3, -2, 0
++    jr              ra
++L(less_2bytes):
++    beqz            a2, L(less_1bytes)
++
++    ld.b            t0, a1, 0
++    st.b            t0, a0, 0
++L(less_1bytes):
++    jr              ra
++    nop
++END(MEMCPY_NAME)
++
++LEAF(MEMMOVE_NAME)
++    li.d            t6, 16
++    add.d           a3, a0, a2
++    add.d           a4, a1, a2
++    bgeu            t6, a2, L(less_16bytes) # a2 <= 16
++
++    li.d            t8, 64
++    li.d            t7, 32
++    bltu            t8, a2, L(move_long)    # a2 > 64
++    bltu            t7, a2, L(more_32bytes) # a2 > 32
++
++    vld             $vr0, a1, 0
++    vld             $vr1, a4, -16
++    vst             $vr0, a0, 0
++    vst             $vr1, a3, -16
++
++    jr              ra
++    nop
++L(move_long):
++    sub.d           t0, a0, a1
++    bltu            t0, a2, L(copy_back)
++
++
++L(copy_long):
++    vld             $vr2, a1, 0
++    andi            t0, a0, 0xf
++    sub.d           t0, t6, t0
++    add.d           a1, a1, t0
++
++    sub.d           a2, a2, t0
++    andi            t1, a1, 0xf
++    bnez            t1, L(unaligned)
++    vld             $vr0, a1, 0
++
++    addi.d          a2, a2, -16
++    vst             $vr2, a0, 0
++    andi            t2, a2, 0x7f
++    add.d           a5, a0, t0
++
++    beq             a2, t2, L(al_less_128)
++    sub.d           t3, a2, t2
++    move            a2, t2
++    add.d           a6, a1, t3
++
++
++L(al_loop):
++    vld             $vr1, a1, 16
++    vld             $vr2, a1, 32
++    vld             $vr3, a1, 48
++    vld             $vr4, a1, 64
++
++    vld             $vr5, a1, 80
++    vld             $vr6, a1, 96
++    vld             $vr7, a1, 112
++    vst             $vr0, a5, 0
++
++    vld             $vr0, a1, 128
++    addi.d          a1, a1, 128
++    vst             $vr1, a5, 16
++    vst             $vr2, a5, 32
++
++    vst             $vr3, a5, 48
++    vst             $vr4, a5, 64
++    vst             $vr5, a5, 80
++    vst             $vr6, a5, 96
++
++
++    vst             $vr7, a5, 112
++    addi.d          a5, a5, 128
++    bne             a1, a6, L(al_loop)
++L(al_less_128):
++    blt             a2, t8, L(al_less_64)
++
++    vld             $vr1, a1, 16
++    vld             $vr2, a1, 32
++    vld             $vr3, a1, 48
++    addi.d          a2, a2, -64
++
++    vst             $vr0, a5, 0
++    vld             $vr0, a1, 64
++    addi.d          a1, a1, 64
++    vst             $vr1, a5, 16
++
++    vst             $vr2, a5, 32
++    vst             $vr3, a5, 48
++    addi.d          a5, a5, 64
++L(al_less_64):
++    blt             a2, t7, L(al_less_32)
++
++
++    vld             $vr1, a1, 16
++    addi.d          a2, a2, -32
++    vst             $vr0, a5, 0
++    vld             $vr0, a1, 32
++
++    addi.d          a1, a1, 32
++    vst             $vr1, a5, 16
++    addi.d          a5, a5, 32
++L(al_less_32):
++    blt             a2, t6, L(al_less_16)
++
++    vst             $vr0, a5, 0
++    vld             $vr0, a1, 16
++    addi.d          a5, a5, 16
++L(al_less_16):
++    vld             $vr1, a4, -16
++
++    vst             $vr0, a5, 0
++    vst             $vr1, a3, -16
++    jr              ra
++    nop
++
++
++L(magic_num):
++    .dword          0x0706050403020100
++    .dword          0x0f0e0d0c0b0a0908
++L(unaligned):
++    pcaddi          t2, -4
++    bstrins.d       a1, zero, 3, 0
++    vld             $vr8, t2, 0
++    vld             $vr0, a1, 0
++
++    vld             $vr1, a1, 16
++    addi.d          a2, a2, -16
++    vst             $vr2, a0, 0
++    add.d           a5, a0, t0
++
++    vreplgr2vr.b    $vr9, t1
++    andi            t2, a2, 0x7f
++    vadd.b          $vr9, $vr9, $vr8
++    addi.d          a1, a1, 32
++
++
++    beq             t2, a2, L(un_less_128)
++    sub.d           t3, a2, t2
++    move            a2, t2
++    add.d           a6, a1, t3
++
++L(un_loop):
++    vld             $vr2, a1, 0
++    vld             $vr3, a1, 16
++    vld             $vr4, a1, 32
++    vld             $vr5, a1, 48
++
++    vld             $vr6, a1, 64
++    vld             $vr7, a1, 80
++    vshuf.b         $vr8, $vr1, $vr0, $vr9
++    vld             $vr0, a1, 96
++
++    vst             $vr8, a5, 0
++    vshuf.b         $vr8, $vr2, $vr1, $vr9
++    vld             $vr1, a1, 112
++    vst             $vr8, a5, 16
++
++
++    addi.d          a1, a1, 128
++    vshuf.b         $vr2, $vr3, $vr2, $vr9
++    vshuf.b         $vr3, $vr4, $vr3, $vr9
++    vst             $vr2, a5, 32
++
++    vshuf.b         $vr4, $vr5, $vr4, $vr9
++    vst             $vr3, a5, 48
++    vshuf.b         $vr5, $vr6, $vr5, $vr9
++    vst             $vr4, a5, 64
++
++    vshuf.b         $vr6, $vr7, $vr6, $vr9
++    vst             $vr5, a5, 80
++    vshuf.b         $vr7, $vr0, $vr7, $vr9
++    vst             $vr6, a5, 96
++
++    vst             $vr7, a5, 112
++    addi.d          a5, a5, 128
++    bne             a1, a6, L(un_loop)
++L(un_less_128):
++    blt             a2, t8, L(un_less_64)
++
++
++    vld             $vr2, a1, 0
++    vld             $vr3, a1, 16
++    vshuf.b         $vr4, $vr1, $vr0, $vr9
++    vld             $vr0, a1, 32
++
++    vst             $vr4, a5, 0
++    addi.d          a2, a2, -64
++    vshuf.b         $vr4, $vr2, $vr1, $vr9
++    vld             $vr1, a1, 48
++
++    addi.d          a1, a1, 64
++    vst             $vr4, a5, 16
++    vshuf.b         $vr2, $vr3, $vr2, $vr9
++    vshuf.b         $vr3, $vr0, $vr3, $vr9
++
++    vst             $vr2, a5, 32
++    vst             $vr3, a5, 48
++    addi.d          a5, a5, 64
++L(un_less_64):
++    blt             a2, t7, L(un_less_32)
++
++
++    vshuf.b         $vr3, $vr1, $vr0, $vr9
++    vld             $vr0, a1, 0
++    vst             $vr3, a5, 0
++    addi.d          a2, a2, -32
++
++    vshuf.b         $vr3, $vr0, $vr1, $vr9
++    vld             $vr1, a1, 16
++    addi.d          a1, a1, 32
++    vst             $vr3, a5, 16
++
++    addi.d          a5, a5, 32
++L(un_less_32):
++    blt             a2, t6, L(un_less_16)
++    vshuf.b         $vr2, $vr1, $vr0, $vr9
++    vor.v           $vr0, $vr1, $vr1
++
++    vld             $vr1, a1, 0
++    vst             $vr2, a5, 0
++    addi.d          a5, a5, 16
++L(un_less_16):
++    vld             $vr2, a4, -16
++
++
++    vshuf.b         $vr0, $vr1, $vr0, $vr9
++    vst             $vr0, a5, 0
++    vst             $vr2, a3, -16
++    jr              ra
++
++L(copy_back):
++    addi.d          t0, a3, -1
++    vld             $vr2, a4, -16
++    andi            t0, t0, 0xf
++    addi.d          t0, t0, 1   # in case a3 is already aligned, load 16bytes and store 16bytes
++
++    sub.d           a4, a4, t0
++    sub.d           a2, a2, t0
++    andi            t1, a4, 0xf
++    bnez            t1, L(back_unaligned)
++
++    vld             $vr0, a4, -16
++    addi.d          a2, a2, -16
++    vst             $vr2, a3, -16
++    andi            t2, a2, 0x7f
++
++
++    sub.d           a3, a3, t0
++    beq             t2, a2, L(back_al_less_128)
++    sub.d           t3, a2, t2
++    move            a2, t2
++
++    sub.d           a6, a4, t3
++L(back_al_loop):
++    vld             $vr1, a4, -32
++    vld             $vr2, a4, -48
++    vld             $vr3, a4, -64
++
++    vld             $vr4, a4, -80
++    vld             $vr5, a4, -96
++    vld             $vr6, a4, -112
++    vld             $vr7, a4, -128
++
++    vst             $vr0, a3, -16
++    vld             $vr0, a4, -144
++    addi.d          a4, a4, -128
++    vst             $vr1, a3, -32
++
++
++    vst             $vr2, a3, -48
++    vst             $vr3, a3, -64
++    vst             $vr4, a3, -80
++    vst             $vr5, a3, -96
++
++    vst             $vr6, a3, -112
++    vst             $vr7, a3, -128
++    addi.d          a3, a3, -128
++    bne             a4, a6, L(back_al_loop)
++
++L(back_al_less_128):
++    blt             a2, t8, L(back_al_less_64)
++    vld             $vr1, a4, -32
++    vld             $vr2, a4, -48
++    vld             $vr3, a4, -64
++
++    addi.d          a2, a2, -64
++    vst             $vr0, a3, -16
++    vld             $vr0, a4, -80
++    addi.d          a4, a4, -64
++
++
++    vst             $vr1, a3, -32
++    vst             $vr2, a3, -48
++    vst             $vr3, a3, -64
++    addi.d          a3, a3, -64
++
++L(back_al_less_64):
++    blt             a2, t7, L(back_al_less_32)
++    vld             $vr1, a4, -32
++    addi.d          a2, a2, -32
++    vst             $vr0, a3, -16
++
++    vld             $vr0, a4, -48
++    vst             $vr1, a3, -32
++    addi.d          a3, a3, -32
++    addi.d          a4, a4, -32
++
++L(back_al_less_32):
++    blt             a2, t6, L(back_al_less_16)
++    vst             $vr0, a3, -16
++    vld             $vr0, a4, -32
++    addi.d          a3, a3, -16
++
++
++L(back_al_less_16):
++    vld             $vr1, a1, 0
++    vst             $vr0, a3, -16
++    vst             $vr1, a0, 0
++    jr              ra
++
++L(magic_num_2):
++    .dword          0x0706050403020100
++    .dword          0x0f0e0d0c0b0a0908
++L(back_unaligned):
++    pcaddi          t2, -4
++    bstrins.d       a4, zero, 3, 0
++    vld             $vr8, t2, 0
++    vld             $vr0, a4, 0
++
++    vld             $vr1, a4, -16
++    addi.d          a2, a2, -16
++    vst             $vr2, a3, -16
++    sub.d           a3, a3, t0
++
++
++    vreplgr2vr.b    $vr9, t1
++    andi            t2, a2, 0x7f
++    vadd.b          $vr9, $vr9, $vr8
++    addi.d          a4, a4, -16
++
++    beq             t2, a2, L(back_un_less_128)
++    sub.d           t3, a2, t2
++    move            a2, t2
++    sub.d           a6, a4, t3
++
++L(back_un_loop):
++    vld             $vr2, a4, -16
++    vld             $vr3, a4, -32
++    vld             $vr4, a4, -48
++
++    vld             $vr5, a4, -64
++    vld             $vr6, a4, -80
++    vld             $vr7, a4, -96
++    vshuf.b         $vr8, $vr0, $vr1, $vr9
++
++
++    vld             $vr0, a4, -112
++    vst             $vr8, a3, -16
++    vshuf.b         $vr8, $vr1, $vr2, $vr9
++    vld             $vr1, a4, -128
++
++    vst             $vr8, a3, -32
++    addi.d          a4, a4, -128
++    vshuf.b         $vr2, $vr2, $vr3, $vr9
++    vshuf.b         $vr3, $vr3, $vr4, $vr9
++
++    vst             $vr2, a3, -48
++    vshuf.b         $vr4, $vr4, $vr5, $vr9
++    vst             $vr3, a3, -64
++    vshuf.b         $vr5, $vr5, $vr6, $vr9
++
++    vst             $vr4, a3, -80
++    vshuf.b         $vr6, $vr6, $vr7, $vr9
++    vst             $vr5, a3, -96
++    vshuf.b         $vr7, $vr7, $vr0, $vr9
++
++
++    vst             $vr6, a3, -112
++    vst             $vr7, a3, -128
++    addi.d          a3, a3, -128
++    bne             a4, a6, L(back_un_loop)
++
++L(back_un_less_128):
++    blt             a2, t8, L(back_un_less_64)
++    vld             $vr2, a4, -16
++    vld             $vr3, a4, -32
++    vshuf.b         $vr4, $vr0, $vr1, $vr9
++
++    vld             $vr0, a4, -48
++    vst             $vr4, a3, -16
++    addi.d          a2, a2, -64
++    vshuf.b         $vr4, $vr1, $vr2, $vr9
++
++    vld             $vr1, a4, -64
++    addi.d          a4, a4, -64
++    vst             $vr4, a3, -32
++    vshuf.b         $vr2, $vr2, $vr3, $vr9
++
++
++    vshuf.b         $vr3, $vr3, $vr0, $vr9
++    vst             $vr2, a3, -48
++    vst             $vr3, a3, -64
++    addi.d          a3, a3, -64
++
++L(back_un_less_64):
++    blt             a2, t7, L(back_un_less_32)
++    vshuf.b         $vr3, $vr0, $vr1, $vr9
++    vld             $vr0, a4, -16
++    vst             $vr3, a3, -16
++
++    addi.d          a2, a2, -32
++    vshuf.b         $vr3, $vr1, $vr0, $vr9
++    vld             $vr1, a4, -32
++    addi.d          a4, a4, -32
++
++    vst             $vr3, a3, -32
++    addi.d          a3, a3, -32
++L(back_un_less_32):
++    blt             a2, t6, L(back_un_less_16)
++    vshuf.b         $vr2, $vr0, $vr1, $vr9
++
++
++    vor.v           $vr0, $vr1, $vr1
++    vld             $vr1, a4, -16
++    vst             $vr2, a3, -16
++    addi.d          a3, a3, -16
++
++L(back_un_less_16):
++    vld             $vr2, a1, 0
++    vshuf.b         $vr0, $vr0, $vr1, $vr9
++    vst             $vr0, a3, -16
++    vst             $vr2, a0, 0
++
++    jr              ra
++END(MEMMOVE_NAME)
++
++#ifdef _LIBC
++libc_hidden_builtin_def (MEMCPY_NAME)
++libc_hidden_builtin_def (MEMMOVE_NAME)
++#endif
++
++#endif
+diff --git a/sysdeps/loongarch/lp64/multiarch/memset.c b/sysdeps/loongarch/lp64/multiarch/memset.c
+index 951f2b0bb1..fc928fab3b 100644
+--- a/sysdeps/loongarch/lp64/multiarch/memset.c
++++ b/sysdeps/loongarch/lp64/multiarch/memset.c
+@@ -24,7 +24,7 @@
+ # undef memset
+ 
+ # define SYMBOL_NAME memset
+-# include "ifunc-memcpy.h"
++# include "ifunc-memset.h"
+ 
+ libc_ifunc_redirected (__redirect_memset, __new_memset,
+ 		       IFUNC_SELECTOR ());
+-- 
+2.20.1
+

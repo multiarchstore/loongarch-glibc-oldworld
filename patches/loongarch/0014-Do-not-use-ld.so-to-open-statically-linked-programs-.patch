@@ -1,0 +1,74 @@
+From a43215b5820fcdd03c1c86e808b4919c4c2f31b9 Mon Sep 17 00:00:00 2001
+From: "Gabriel F. T. Gomes" <gabrielftg@linux.ibm.com>
+Date: Tue, 3 Dec 2019 22:40:38 -0300
+Subject: [PATCH 14/14] Do not use ld.so to open statically linked programs in
+ debugglibc.sh
+
+Debugging programs that have been dynamically linked against an
+uninstalled glibc requires unusual steps, such as letting gdb know where
+the thread db library is located and explicitly calling the loader.
+However, when the program under test is statically linked, these steps
+are not required (as a matter of fact, using the dynamic loader to run a
+statically linked program is wrong and will fail), and gdb should be
+called the usual way.
+
+This patch modifies debugglibc.sh so that it checks if the program under
+test is statically linked, then runs the debugger appropriately.
+
+Reviewed-by: Carlos O'Donell <carlos@redhat.com>
+Change-Id: I2d752ef6f05ca4375bbcf992602629fa5b199519
+---
+ Makefile | 16 ++++++++++++++--
+ 1 file changed, 14 insertions(+), 2 deletions(-)
+
+diff --git a/Makefile b/Makefile
+index 33cefc8d8b..a8f76c53cc 100644
+--- a/Makefile
++++ b/Makefile
+@@ -208,6 +208,7 @@ BUILD_DIR="$(common-objpfx)"
+ CMD_FILE="$(common-objpfx)debugglibc.gdb"
+ CONTAINER=false
+ DIRECT=true
++STATIC=false
+ SYMBOLSFILE=true
+ unset TESTCASE
+ unset BREAKPOINTS
+@@ -296,8 +297,8 @@ do
+   shift
+ done
+ 
+-# Check for required argument
+-if [ ! -v TESTCASE ]
++# Check for required argument and if the testcase exists
++if [ ! -v TESTCASE ] || [ ! -f $${TESTCASE} ]
+ then
+   usage
+   exit 1
+@@ -317,6 +318,14 @@ else
+   DIRECT=""
+ fi
+ 
++# Check if the test case is static
++if file $${TESTCASE} | grep "statically linked" >/dev/null
++then
++  STATIC=true
++else
++  STATIC=false
++fi
++
+ # Expand symbols loading command
+ if [ "$$SYMBOLSFILE" == true ]
+ then
+@@ -365,6 +374,9 @@ then
+ # automatically attach GDB to it.
+ WAIT_FOR_DEBUGGER=1 $(common-objpfx)testrun.sh --tool=container $${TESTCASE} &
+ gdb -x $${TESTCASE}.gdb
++elif [ "$$STATIC" == true ]
++then
++gdb $${TESTCASE}
+ else
+ # Start the test case debugging in two steps:
+ #   1. the following command invokes gdb to run the loader;
+-- 
+2.20.1
+

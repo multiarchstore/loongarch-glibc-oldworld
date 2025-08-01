@@ -1,0 +1,28 @@
+From 4be7885d3f106b20c5586519b1272b06628a747a Mon Sep 17 00:00:00 2001
+From: caiyinyu <caiyinyu@loongson.cn>
+Date: Wed, 21 Jun 2023 11:55:02 +0800
+Subject: [PATCH 8/9] glibc-2.28: Add new struct user_fp_state in user.h
+
+Change-Id: Idc233cc11c8f76b624dc2891b432f4d02a53cebc
+---
+ sysdeps/unix/sysv/linux/loongarch/sys/user.h | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/sysdeps/unix/sysv/linux/loongarch/sys/user.h b/sysdeps/unix/sysv/linux/loongarch/sys/user.h
+index f9108350ed..21e340f638 100644
+--- a/sysdeps/unix/sysv/linux/loongarch/sys/user.h
++++ b/sysdeps/unix/sysv/linux/loongarch/sys/user.h
+@@ -28,4 +28,10 @@ struct user_regs_struct
+   uint64_t reserved[11];
+ };
+ 
++struct user_fp_struct {
++  uint64_t    fpr[32];
++  uint64_t    fcc;
++  uint32_t    fcsr;
++};
++
+ #endif	/* _SYS_USER_H */
+-- 
+2.40.1
+

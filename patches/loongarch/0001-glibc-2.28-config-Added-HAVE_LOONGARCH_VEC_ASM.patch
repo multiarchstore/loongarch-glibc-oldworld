@@ -1,0 +1,90 @@
+From 365bf60b6394843b8e88ca2a2d57a517c6e1bab8 Mon Sep 17 00:00:00 2001
+From: caiyinyu <caiyinyu@loongson.cn>
+Date: Tue, 11 Jul 2023 15:42:26 +0800
+Subject: [PATCH 01/11] glibc-2.28: config: Added HAVE_LOONGARCH_VEC_ASM.
+
+Change-Id: Iea464ea0c975a351682a60f66251167f6c79385b
+---
+ config.h.in                    |  5 +++++
+ sysdeps/loongarch/configure    | 28 ++++++++++++++++++++++++++++
+ sysdeps/loongarch/configure.ac | 15 +++++++++++++++
+ 3 files changed, 48 insertions(+)
+
+diff --git a/config.h.in b/config.h.in
+index 141db213a9..b31c21568c 100644
+--- a/config.h.in
++++ b/config.h.in
+@@ -106,6 +106,11 @@
+ /* RISC-V floating-point ABI for ld.so.  */
+ #undef RISCV_ABI_FLEN
+ 
++/* Assembler support LoongArch LASX/LSX vector instructions.
++   This macro becomes obsolete when glibc increased the minimum
++   required version of GNU 'binutils' to 2.41 or later. */
++#define HAVE_LOONGARCH_VEC_ASM 0
++
+ /* Linux specific: minimum supported kernel version.  */
+ #undef	__LINUX_KERNEL_VERSION
+ 
+diff --git a/sysdeps/loongarch/configure b/sysdeps/loongarch/configure
+index 1e5abf81a7..0f0dae3ac1 100755
+--- a/sysdeps/loongarch/configure
++++ b/sysdeps/loongarch/configure
+@@ -2,3 +2,31 @@
+  # Local configure fragment for sysdeps/loongarch/elf.
+ 
+ #AC_DEFINE(PI_STATIC_AND_HIDDEN)
++
++# Check if asm support vector instructions.
++{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for vector support in assembler" >&5
++$as_echo_n "checking for vector support in assembler... " >&6; }
++if ${libc_cv_loongarch_vec_asm+:} false; then :
++  $as_echo_n "(cached) " >&6
++else
++  cat > conftest.s <<\EOF
++        vld  $vr0, $sp, 0
++EOF
++if { ac_try='${CC-cc} -c $CFLAGS conftest.s -o conftest 1>&5'
++  { { eval echo "\"\$as_me\":${as_lineno-$LINENO}: \"$ac_try\""; } >&5
++  (eval $ac_try) 2>&5
++  ac_status=$?
++  $as_echo "$as_me:${as_lineno-$LINENO}: \$? = $ac_status" >&5
++  test $ac_status = 0; }; }; then
++  libc_cv_loongarch_vec_asm=yes
++else
++  libc_cv_loongarch_vec_asm=no
++fi
++rm -f conftest*
++fi
++{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $libc_cv_loongarch_vec_asm" >&5
++$as_echo "$libc_cv_loongarch_vec_asm" >&6; }
++if test $libc_cv_loongarch_vec_asm = yes; then
++  $as_echo "#define HAVE_LOONGARCH_VEC_ASM 1" >>confdefs.h
++
++fi
+diff --git a/sysdeps/loongarch/configure.ac b/sysdeps/loongarch/configure.ac
+index 67b46ce048..aac0efa943 100644
+--- a/sysdeps/loongarch/configure.ac
++++ b/sysdeps/loongarch/configure.ac
+@@ -4,3 +4,18 @@ GLIBC_PROVIDES dnl See aclocal.m4 in the top level source directory.
+ dnl It is always possible to access static and hidden symbols in an
+ dnl position independent way.
+ #AC_DEFINE(PI_STATIC_AND_HIDDEN)
++
++# Check if asm support vector instructions.
++AC_CACHE_CHECK(for vector support in assembler, libc_cv_loongarch_vec_asm, [dnl
++cat > conftest.s <<\EOF
++        vld  $vr0, $sp, 0
++EOF
++if AC_TRY_COMMAND(${CC-cc} -c $CFLAGS conftest.s -o conftest 1>&AS_MESSAGE_LOG_FD); then
++  libc_cv_loongarch_vec_asm=yes
++else
++  libc_cv_loongarch_vec_asm=no
++fi
++rm -f conftest*])
++if test $libc_cv_loongarch_vec_asm = yes; then
++  AC_DEFINE(HAVE_LOONGARCH_VEC_ASM)
++fi
+-- 
+2.40.1
+

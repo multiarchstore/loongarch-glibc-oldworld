@@ -1,0 +1,169 @@
+From 2eb01857e8169104346178378ac06c1ef14265e8 Mon Sep 17 00:00:00 2001
+From: Xiaolin Tang <tangxiaolin@loongson.cn>
+Date: Mon, 7 Nov 2022 17:44:59 +0800
+Subject: [PATCH 11/44] LoongArch: Hard Float Support for fmaxmag{f/ },
+ fminmag{f/ }.
+
+Use hardware Floating-point instruction f{maxa/mina}.{s/d},
+to implement fmaxmag{f/ }, fminmag{f/ }.
+
+       *  sysdeps/loongarch/fpu/s_fmaxmag.c: New file.
+       *  sysdeps/loongarch/fpu/s_fmaxmagf.c: Likewise.
+       *  sysdeps/loongarch/fpu/s_fminmag.c: Likewise.
+       *  sysdeps/loongarch/fpu/s_fminmagf.c: Likewise.
+
+Change-Id: I92292f56c4aad9841ff9a99e56e30da4f9a88c3e
+---
+ sysdeps/loongarch/fpu/s_fmaxmag.c  | 29 +++++++++++++++++++++++++++++
+ sysdeps/loongarch/fpu/s_fmaxmagf.c | 29 +++++++++++++++++++++++++++++
+ sysdeps/loongarch/fpu/s_fminmag.c  | 29 +++++++++++++++++++++++++++++
+ sysdeps/loongarch/fpu/s_fminmagf.c | 29 +++++++++++++++++++++++++++++
+ 4 files changed, 116 insertions(+)
+ create mode 100644 sysdeps/loongarch/fpu/s_fmaxmag.c
+ create mode 100644 sysdeps/loongarch/fpu/s_fmaxmagf.c
+ create mode 100644 sysdeps/loongarch/fpu/s_fminmag.c
+ create mode 100644 sysdeps/loongarch/fpu/s_fminmagf.c
+
+diff --git a/sysdeps/loongarch/fpu/s_fmaxmag.c b/sysdeps/loongarch/fpu/s_fmaxmag.c
+new file mode 100644
+index 0000000000..8570a3ba48
+--- /dev/null
++++ b/sysdeps/loongarch/fpu/s_fmaxmag.c
+@@ -0,0 +1,29 @@
++/* fmaxmag().  LoongArch version.
++   Copyright (C) 2022 Free Software Foundation, Inc.
++   This file is part of the GNU C Library.
++
++   The GNU C Library is free software; you can redistribute it and/or
++   modify it under the terms of the GNU Lesser General Public
++   License as published by the Free Software Foundation; either
++   version 2.1 of the License, or (at your option) any later version.
++
++   The GNU C Library is distributed in the hope that it will be useful,
++   but WITHOUT ANY WARRANTY; without even the implied warranty of
++   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++   Lesser General Public License for more details.
++
++   You should have received a copy of the GNU Lesser General Public
++   License along with the GNU C Library; if not, see
++   <https://www.gnu.org/licenses/>.  */
++
++#define NO_MATH_REDIRECT
++#include <math.h>
++#include <libm-alias-double.h>
++
++double
++__fmaxmag (double x, double y)
++{
++  asm volatile ("fmaxa.d \t%0, %1, %2" : "=f" (x) : "f" (x), "f" (y));
++  return x;
++}
++libm_alias_double (__fmaxmag, fmaxmag)
+diff --git a/sysdeps/loongarch/fpu/s_fmaxmagf.c b/sysdeps/loongarch/fpu/s_fmaxmagf.c
+new file mode 100644
+index 0000000000..413e7683dd
+--- /dev/null
++++ b/sysdeps/loongarch/fpu/s_fmaxmagf.c
+@@ -0,0 +1,29 @@
++/* fmaxmagf().  LoongArch version.
++   Copyright (C) 2022 Free Software Foundation, Inc.
++   This file is part of the GNU C Library.
++
++   The GNU C Library is free software; you can redistribute it and/or
++   modify it under the terms of the GNU Lesser General Public
++   License as published by the Free Software Foundation; either
++   version 2.1 of the License, or (at your option) any later version.
++
++   The GNU C Library is distributed in the hope that it will be useful,
++   but WITHOUT ANY WARRANTY; without even the implied warranty of
++   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++   Lesser General Public License for more details.
++
++   You should have received a copy of the GNU Lesser General Public
++   License along with the GNU C Library; if not, see
++   <https://www.gnu.org/licenses/>.  */
++
++#define NO_MATH_REDIRECT
++#include <math.h>
++#include <libm-alias-float.h>
++
++float
++__fmaxmagf (float x, float y)
++{
++  asm volatile ("fmaxa.s \t%0, %1, %2" : "=f" (x) : "f" (x), "f" (y));
++  return x;
++}
++libm_alias_float (__fmaxmag, fmaxmag)
+diff --git a/sysdeps/loongarch/fpu/s_fminmag.c b/sysdeps/loongarch/fpu/s_fminmag.c
+new file mode 100644
+index 0000000000..2badf3d3e5
+--- /dev/null
++++ b/sysdeps/loongarch/fpu/s_fminmag.c
+@@ -0,0 +1,29 @@
++/* fminmag().  LoongArch version.
++   Copyright (C) 2022 Free Software Foundation, Inc.
++   This file is part of the GNU C Library.
++
++   The GNU C Library is free software; you can redistribute it and/or
++   modify it under the terms of the GNU Lesser General Public
++   License as published by the Free Software Foundation; either
++   version 2.1 of the License, or (at your option) any later version.
++
++   The GNU C Library is distributed in the hope that it will be useful,
++   but WITHOUT ANY WARRANTY; without even the implied warranty of
++   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++   Lesser General Public License for more details.
++
++   You should have received a copy of the GNU Lesser General Public
++   License along with the GNU C Library; if not, see
++   <https://www.gnu.org/licenses/>.  */
++
++#define NO_MATH_REDIRECT
++#include <math.h>
++#include <libm-alias-double.h>
++
++double
++__fminmag (double x, double y)
++{
++  asm volatile ("fmina.d \t%0, %1, %2" : "=f" (x) : "f" (x), "f" (y));
++  return x;
++}
++libm_alias_double (__fminmag, fminmag)
+diff --git a/sysdeps/loongarch/fpu/s_fminmagf.c b/sysdeps/loongarch/fpu/s_fminmagf.c
+new file mode 100644
+index 0000000000..4d625312c0
+--- /dev/null
++++ b/sysdeps/loongarch/fpu/s_fminmagf.c
+@@ -0,0 +1,29 @@
++/* fminmagf().  LoongArch version.
++   Copyright (C) 2022 Free Software Foundation, Inc.
++   This file is part of the GNU C Library.
++
++   The GNU C Library is free software; you can redistribute it and/or
++   modify it under the terms of the GNU Lesser General Public
++   License as published by the Free Software Foundation; either
++   version 2.1 of the License, or (at your option) any later version.
++
++   The GNU C Library is distributed in the hope that it will be useful,
++   but WITHOUT ANY WARRANTY; without even the implied warranty of
++   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++   Lesser General Public License for more details.
++
++   You should have received a copy of the GNU Lesser General Public
++   License along with the GNU C Library; if not, see
++   <https://www.gnu.org/licenses/>.  */
++
++#define NO_MATH_REDIRECT
++#include <math.h>
++#include <libm-alias-float.h>
++
++float
++__fminmagf (float x, float y)
++{
++  asm volatile ("fmina.s \t%0, %1, %2" : "=f" (x) : "f" (x), "f" (y));
++  return x;
++}
++libm_alias_float (__fminmag, fminmag)
+-- 
+2.20.1
+

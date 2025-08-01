@@ -1,0 +1,122 @@
+From 9427987e978636d7f94dce1d9743c732b408e5d4 Mon Sep 17 00:00:00 2001
+From: caiyinyu <caiyinyu@loongson.cn>
+Date: Wed, 6 Sep 2023 16:41:09 +0800
+Subject: [PATCH 05/11] glibc-2.28: Use RTLD_SUPPORT_{LSX, LASX} to choose
+ _dl_runtime_resolve.
+
+Key Points:
+1. On lasx & lsx platforms, use _dl_runtime_resolve_{lsx, lasx} to save vector registers.
+2. Via "tunables", users can choose str/mem functions with
+   `export GLIBC_TUNABLES=glibc.cpu.hwcaps=LASX`.
+   Note: glibc.cpu.hwcaps doesn't affect _dl_runtime_resolve_{lsx, lasx} selection.
+
+Usage Notes:
+1. Only valid inputs: LASX, LSX, UAL. Case-sensitive, comma-separated, no spaces.
+2. Example: `export GLIBC_TUNABLES=glibc.cpu.hwcaps=LASX,UAL` turns on LASX & UAL.
+   Unmentioned features turn off. With default ifunc: lasx > lsx > unaligned >
+   aligned > generic, effect is: lasx > unaligned > aligned > generic; lsx off.
+3. Incorrect GLIBC_TUNABLES settings will show error messages.
+4. Valid input examples:
+   - GLIBC_TUNABLES=glibc.cpu.hwcaps=LASX: lasx > aligned > generic.
+   - GLIBC_TUNABLES=glibc.cpu.hwcaps=LSX,UAL: lsx > unaligned > aligned > generic.
+   - GLIBC_TUNABLES=glibc.cpu.hwcaps=LASX,UAL,LASX,UAL,LSX,LASX,UAL: Repetitions
+     allowed but not recommended. Results in: lasx > lsx > unaligned > aligned >
+     generic.
+
+Change-Id: I555ce2039bc36bf071fc9265d7b0bb7b93b96ae7
+---
+ sysdeps/loongarch/cpu-tunables.c                 |  2 +-
+ sysdeps/loongarch/dl-machine.h                   | 11 ++++++-----
+ sysdeps/unix/sysv/linux/loongarch/cpu-features.c |  2 ++
+ sysdeps/unix/sysv/linux/loongarch/cpu-features.h | 10 +++++++---
+ 4 files changed, 16 insertions(+), 9 deletions(-)
+
+diff --git a/sysdeps/loongarch/cpu-tunables.c b/sysdeps/loongarch/cpu-tunables.c
+index 840c1b8c9c..e0799ca959 100644
+--- a/sysdeps/loongarch/cpu-tunables.c
++++ b/sysdeps/loongarch/cpu-tunables.c
+@@ -88,7 +88,7 @@ TUNABLE_CALLBACK (set_hwcaps) (tunable_val_t *valp)
+     }
+   while (*c != '\0');
+ 
+-  GLRO (dl_hwcap) &= hwcap;
++  GLRO (dl_larch_cpu_features).hwcap &= hwcap;
+ }
+ 
+ #endif
+diff --git a/sysdeps/loongarch/dl-machine.h b/sysdeps/loongarch/dl-machine.h
+index b0813f0747..31d24721b5 100644
+--- a/sysdeps/loongarch/dl-machine.h
++++ b/sysdeps/loongarch/dl-machine.h
+@@ -74,13 +74,14 @@ dl_platform_init (void)
+     GLRO(dl_platform) = NULL;
+ 
+ #ifdef SHARED
++  /* init_cpu_features has been called early from __libc_start_main in
++     static executable.  */
++  init_cpu_features (&GLRO(dl_larch_cpu_features));
+ 
+ #if HAVE_TUNABLES
+   TUNABLE_GET (hwcaps, tunable_val_t *, TUNABLE_CALLBACK (set_hwcaps));
+ #endif
+-  /* init_cpu_features has been called early from __libc_start_main in
+-     static executable.  */
+-  init_cpu_features (&GLRO(dl_larch_cpu_features));
++
+ #endif
+ }
+ 
+@@ -391,9 +392,9 @@ elf_machine_runtime_setup (struct link_map *l, int lazy, int profile)
+ 	l->l_mach.plt = gotplt[1] + l->l_addr;
+ 
+ #if HAVE_LOONGARCH_VEC_ASM && !defined __loongarch_soft_float
+-      if (SUPPORT_LASX)
++      if (RTLD_SUPPORT_LASX)
+ 	gotplt[0] = (ElfW(Addr)) &_dl_runtime_resolve_lasx;
+-      else if (SUPPORT_LSX)
++      else if (RTLD_SUPPORT_LSX)
+ 	gotplt[0] = (ElfW(Addr)) &_dl_runtime_resolve_lsx;
+       else
+ #endif
+diff --git a/sysdeps/unix/sysv/linux/loongarch/cpu-features.c b/sysdeps/unix/sysv/linux/loongarch/cpu-features.c
+index 80870f3cae..cf015011e6 100644
+--- a/sysdeps/unix/sysv/linux/loongarch/cpu-features.c
++++ b/sysdeps/unix/sysv/linux/loongarch/cpu-features.c
+@@ -29,4 +29,6 @@ init_cpu_features (struct cpu_features *cpu_features)
+ 
+   __cpucfg(cpucfg_word, 2);
+   cpu_features->cpucfg_word_idx2 = cpucfg_word;
++
++  GLRO (dl_larch_cpu_features).hwcap = GLRO (dl_hwcap);
+ }
+diff --git a/sysdeps/unix/sysv/linux/loongarch/cpu-features.h b/sysdeps/unix/sysv/linux/loongarch/cpu-features.h
+index 2703d4f7ba..17c9f5a74a 100644
+--- a/sysdeps/unix/sysv/linux/loongarch/cpu-features.h
++++ b/sysdeps/unix/sysv/linux/loongarch/cpu-features.h
+@@ -26,6 +26,7 @@ struct cpu_features
+ {
+   uint64_t cpucfg_prid;
+   uint64_t cpucfg_word_idx2;
++  uint64_t hwcap;
+ };
+ 
+ /* Get a pointer to the CPU features structure.  */
+@@ -38,9 +39,12 @@ extern const struct cpu_features *_dl_larch_get_cpu_features (void)
+ 		:"=r"(ret)			\
+ 		:"r"(index));
+ 
+-#define SUPPORT_UAL (GLRO (dl_hwcap) & HWCAP_LOONGARCH_UAL)
+-#define SUPPORT_LSX (GLRO (dl_hwcap) & HWCAP_LOONGARCH_LSX)
+-#define SUPPORT_LASX (GLRO (dl_hwcap) & HWCAP_LOONGARCH_LASX)
++#define SUPPORT_UAL (GLRO (dl_larch_cpu_features).hwcap & HWCAP_LOONGARCH_UAL)
++#define SUPPORT_LSX (GLRO (dl_larch_cpu_features).hwcap & HWCAP_LOONGARCH_LSX)
++#define SUPPORT_LASX (GLRO (dl_larch_cpu_features).hwcap & HWCAP_LOONGARCH_LASX)
++
++#define RTLD_SUPPORT_LSX (GLRO (dl_hwcap) & HWCAP_LOONGARCH_LSX)
++#define RTLD_SUPPORT_LASX (GLRO (dl_hwcap) & HWCAP_LOONGARCH_LASX)
+ 
+ #endif /* _CPU_FEATURES_LOONGARCH64_H  */
+ 
+-- 
+2.40.1
+
