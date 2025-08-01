@@ -25,7 +25,7 @@
    replaced by a call to `execve'.  Return -1 for errors, 0 to the new process,
    and the process ID of the new process to the old process.  */
 
-ENTRY (__vfork)
+ENTRY (__vfork, 3)
 
 
     li.d a0, 0x4111 /* CLONE_VM | CLONE_VFORK | SIGCHLD */

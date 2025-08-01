@@ -21,10 +21,18 @@
 
 #define ELF_MACHINE_NAME "LoongArch"
 
+#if HAVE_TUNABLES
+#define TUNABLE_NAMESPACE cpu
+#include <elf/dl-tunables.h>
+extern void TUNABLE_CALLBACK (set_hwcaps) (tunable_val_t *) attribute_hidden;
+#endif
+
 #include <entry.h>
 #include <elf/elf.h>
 #include <sys/asm.h>
 #include <dl-tls.h>
+#include <cpu-features.c>
+
 
 #ifndef _RTLD_PROLOGUE
 # define _RTLD_PROLOGUE(entry)						\
@@ -56,6 +64,28 @@
 #define ELF_MACHINE_NO_REL 1
 #define ELF_MACHINE_NO_RELA 0
 
+#define DL_PLATFORM_INIT dl_platform_init ()
+
+static inline void __attribute__ ((unused))
+dl_platform_init (void)
+{
+  if (GLRO(dl_platform) != NULL && *GLRO(dl_platform) == '\0')
+    /* Avoid an empty string which would disturb us.  */
+    GLRO(dl_platform) = NULL;
+
+#ifdef SHARED
+  /* init_cpu_features has been called early from __libc_start_main in
+     static executable.  */
+  init_cpu_features (&GLRO(dl_larch_cpu_features));
+
+#if HAVE_TUNABLES
+  TUNABLE_GET (hwcaps, tunable_val_t *, TUNABLE_CALLBACK (set_hwcaps));
+#endif
+
+#endif
+}
+
+
 /* Return nonzero iff ELF header is compatible with the running host.  */
 static inline int __attribute_used__
 elf_machine_matches_host (const ElfW(Ehdr) *ehdr)
@@ -66,8 +96,6 @@ elf_machine_matches_host (const ElfW(Ehdr) *ehdr)
 
 #ifdef _ABILP64
   if ((ehdr->e_flags & EF_LARCH_ABI) != EF_LARCH_ABI_LP64)
-#elif defined _ABILPX32
-  if ((ehdr->e_flags & EF_LARCH_ABI) != EF_LARCH_ABI_LPX32)
 #elif defined _ABILP32
   if ((ehdr->e_flags & EF_LARCH_ABI) != EF_LARCH_ABI_LP32)
 #else
@@ -286,7 +314,8 @@ elf_machine_rela (struct link_map *map, const ElfW(Rela) *reloc,
 
     case R_LARCH_IRELATIVE:
       value = map->l_addr + reloc->r_addend;
-      value = ((ElfW(Addr) (*) (void)) value) ();
+      if (__glibc_likely (!skip_ifunc))
+	value = ((ElfW(Addr) (*) (void)) value) ();
       *addr_field = value;
       break;
 
@@ -348,14 +377,29 @@ elf_machine_runtime_setup (struct link_map *l, int lazy, int profile)
   /* If using PLTs, fill in the first two entries of .got.plt.  */
   if (l->l_info[DT_JMPREL])
     {
+
+#if HAVE_LOONGARCH_VEC_ASM && !defined __loongarch_soft_float
+      extern void _dl_runtime_resolve_lasx (void) __attribute__ ((visibility ("hidden")));
+      extern void _dl_runtime_resolve_lsx (void) __attribute__ ((visibility ("hidden")));
+#endif
       extern void _dl_runtime_resolve (void) __attribute__ ((visibility ("hidden")));
+
       ElfW(Addr) *gotplt = (ElfW(Addr) *) D_PTR (l, l_info[DT_PLTGOT]);
       /* If a library is prelinked but we have to relocate anyway,
 	 we have to be able to undo the prelinking of .got.plt.
 	 The prelinker saved the address of .plt for us here.  */
       if (gotplt[1])
 	l->l_mach.plt = gotplt[1] + l->l_addr;
-      gotplt[0] = (ElfW(Addr)) &_dl_runtime_resolve;
+
+#if HAVE_LOONGARCH_VEC_ASM && !defined __loongarch_soft_float
+      if (RTLD_SUPPORT_LASX)
+	gotplt[0] = (ElfW(Addr)) &_dl_runtime_resolve_lasx;
+      else if (RTLD_SUPPORT_LSX)
+	gotplt[0] = (ElfW(Addr)) &_dl_runtime_resolve_lsx;
+      else
+#endif
+	gotplt[0] = (ElfW(Addr)) &_dl_runtime_resolve;
+
       gotplt[1] = (ElfW(Addr)) l;
     }
 #endif

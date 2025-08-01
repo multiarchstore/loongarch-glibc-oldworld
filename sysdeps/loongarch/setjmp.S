@@ -19,14 +19,14 @@
 #include <sysdep.h>
 #include <sys/asm.h>
 
-ENTRY (_setjmp)
+ENTRY (_setjmp, 3)
   li.w a1,0
   b __sigsetjmp
 END (_setjmp)
-ENTRY (setjmp)
+ENTRY (setjmp, 3)
   li.w a1,1
 END (setjmp)
-ENTRY (__sigsetjmp)
+ENTRY (__sigsetjmp, 3)
   REG_S ra, a0, 0*SZREG
   REG_S sp, a0, 1*SZREG
   REG_S x, a0,  2*SZREG

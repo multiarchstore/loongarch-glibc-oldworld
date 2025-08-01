@@ -74,9 +74,7 @@
     movgr2fr.d  tmp, rs;\
     ffint.d.l   rd, tmp
 
-LEAF(COSF)
-    .align      2
-    .align      3
+LEAF(COSF, 3)
     /* fa0 is SP x; fa1 is DP x */
     movfr2gr.s  t0, fa0 /* Bits of x */
     fcvt.d.s    fa1, fa0 /* DP x */
@@ -215,9 +213,9 @@ L_even_integer:
     fadd.d      fa0, fa0, fa1
     fadd.d      fa2, fa2, fa3
     fadd.d      fa0, fa0, fa2
-    fcmp.sle.d  $fcc0, fa0, fa5
+    fcmp.sle.d  fcc0, fa0, fa5
     addi.d      t0, t0, 3
-    bcnez       $fcc0, L_leq_one
+    bcnez       fcc0, L_leq_one
 /*L_gt_one:*/
     fld.d       fa2, t1, 16 /* 2.0 */
     addi.d      t0, t0, 1

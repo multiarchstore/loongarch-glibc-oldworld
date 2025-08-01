@@ -32,7 +32,7 @@
 # define __SIZEOF_PTHREAD_BARRIER_T 		32
 # define __SIZEOF_PTHREAD_BARRIERATTR_T 	 4
 #else
-# error "rv32i-based systems are not supported"
+# error "32-bit based systems are not supported"
 #endif
 
 #define __PTHREAD_COMPAT_PADDING_MID

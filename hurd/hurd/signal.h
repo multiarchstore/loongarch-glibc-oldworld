@@ -68,12 +68,20 @@ struct hurd_sigstate
 
     spin_lock_t lock;		/* Locks most of the rest of the structure.  */
 
+    /* The signal state holds a reference on the thread port.  */
     thread_t thread;
+
     struct hurd_sigstate *next; /* Linked-list of thread sigstates.  */
 
     sigset_t blocked;		/* What signals are blocked.  */
     sigset_t pending;		/* Pending signals, possibly blocked.  */
+
+    /* Signal handlers.  ACTIONS[0] is used to mark the threads with POSIX
+       semantics: if sa_handler is SIG_IGN instead of SIG_DFL, this thread
+       will receive global signals and use the process-wide action vector
+       instead of this one.  */
     struct sigaction actions[_NSIG];
+
     stack_t sigaltstack;
 
     /* Chain of thread-local signal preemptors; see <hurd/sigpreempt.h>.
@@ -116,7 +124,9 @@ extern struct hurd_sigstate *_hurd_sigstates;
 
 extern struct mutex _hurd_siglock; /* Locks _hurd_sigstates.  */
 
-/* Get the sigstate of a given thread, taking its lock.  */
+/* Get the sigstate of a given thread.  If there was no sigstate for
+   the thread, one is created, and the thread gains a reference.  If
+   the given thread is MACH_PORT_NULL, return the global sigstate.  */
 
 extern struct hurd_sigstate *_hurd_thread_sigstate (thread_t);
 
@@ -129,6 +139,26 @@ extern struct hurd_sigstate *_hurd_self_sigstate (void)
 	by different threads.  */
      __attribute__ ((__const__));
 
+/* Process-wide signal state.  */
+
+extern struct hurd_sigstate *_hurd_global_sigstate;
+
+/* Mark the given thread as a process-wide signal receiver.  */
+
+extern void _hurd_sigstate_set_global_rcv (struct hurd_sigstate *ss);
+
+/* A thread can either use its own action vector and pending signal set
+   or use the global ones, depending on wether it has been marked as a
+   global receiver. The accessors below take that into account.  */
+
+extern void _hurd_sigstate_lock (struct hurd_sigstate *ss);
+extern struct sigaction *_hurd_sigstate_actions (struct hurd_sigstate *ss);
+extern sigset_t _hurd_sigstate_pending (const struct hurd_sigstate *ss);
+extern void _hurd_sigstate_unlock (struct hurd_sigstate *ss);
+
+/* Used by libpthread to remove stale sigstate structures.  */
+extern void _hurd_sigstate_delete (thread_t thread);
+
 #ifndef _HURD_SIGNAL_H_EXTERN_INLINE
 #define _HURD_SIGNAL_H_EXTERN_INLINE __extern_inline
 #endif
@@ -139,7 +169,11 @@ _HURD_SIGNAL_H_EXTERN_INLINE struct hurd_sigstate *
 _hurd_self_sigstate (void)
 {
   if (THREAD_SELF->_hurd_sigstate == NULL)
-    THREAD_SELF->_hurd_sigstate = _hurd_thread_sigstate (__mach_thread_self ());
+    {
+      thread_t self = __mach_thread_self ();
+      THREAD_SELF->_hurd_sigstate = _hurd_thread_sigstate (self);
+      __mach_port_deallocate (__mach_task_self (), self);
+    }
   return THREAD_SELF->_hurd_sigstate;
 }
 # endif
@@ -153,12 +187,6 @@ extern thread_t _hurd_msgport_thread;
    listens for messages on it.  We also hold a send right, for convenience.  */
 
 extern mach_port_t _hurd_msgport;
-
-
-/* Thread to receive process-global signals.  */
-
-extern thread_t _hurd_sigthread;
-
 
 /* Resource limit on core file size.  Enforced by hurdsig.c.  */
 extern int _hurd_core_limit;
@@ -188,11 +216,14 @@ _hurd_critical_section_lock (void)
   ss = THREAD_SELF->_hurd_sigstate;
   if (ss == NULL)
     {
+      thread_t self = __mach_thread_self ();
+
       /* The thread variable is unset; this must be the first time we've
 	 asked for it.  In this case, the critical section flag cannot
 	 possible already be set.  Look up our sigstate structure the slow
 	 way.  */
-      ss = THREAD_SELF->_hurd_sigstate = _hurd_thread_sigstate (__mach_thread_self ());
+      ss = THREAD_SELF->_hurd_sigstate = _hurd_thread_sigstate (self);
+      __mach_port_deallocate (__mach_task_self (), self);
     }
 
   if (! __spin_try_lock (&ss->critical_section_lock))
@@ -222,10 +253,10 @@ _hurd_critical_section_unlock (void *our_lock)
       /* It was us who acquired the critical section lock.  Unlock it.  */
       struct hurd_sigstate *ss = (struct hurd_sigstate *) our_lock;
       sigset_t pending;
-      __spin_lock (&ss->lock);
+      _hurd_sigstate_lock (ss);
       __spin_unlock (&ss->critical_section_lock);
-      pending = ss->pending & ~ss->blocked;
-      __spin_unlock (&ss->lock);
+      pending = _hurd_sigstate_pending(ss) & ~ss->blocked;
+      _hurd_sigstate_unlock (ss);
       if (! __sigisemptyset (&pending))
 	/* There are unblocked signals pending, which weren't
 	   delivered because we were in the critical section.
@@ -264,6 +295,11 @@ extern int _hurd_raise_signal (struct hurd_sigstate *ss, int signo,
 
 extern void _hurd_exception2signal (struct hurd_signal_detail *detail,
 				    int *signo);
+
+/* Translate a Mach exception into a signal with a legacy sigcode.  */
+
+extern void _hurd_exception2signal_legacy (struct hurd_signal_detail *detail,
+					   int *signo);
 
 
 /* Make the thread described by SS take the signal described by SIGNO and

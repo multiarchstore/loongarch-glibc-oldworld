@@ -1,5 +1,14 @@
 ifeq ($(subdir),misc)
 sysdep_headers += sys/asm.h
+tests += \
+  tst-hwcap-tunables \
+  # tests
+
+tst-hwcap-tunables-ARGS = -- $(host-test-program-cmd)
+endif
+
+ifeq ($(subdir),elf)
+  sysdep-dl-routines += dl-get-cpu-features
 endif
 
 # LoongArch's assembler also needs to know about PIC as it changes the definition

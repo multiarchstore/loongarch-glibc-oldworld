@@ -43,6 +43,7 @@ void xunlink (const char *path);
 long xsysconf (int name);
 long long xlseek (int fd, long long offset, int whence);
 void xftruncate (int fd, long long length);
+void xchdir (const char *path);
 
 /* Read the link at PATH.  The caller should free the returned string
    with free.  */

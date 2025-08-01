@@ -29,7 +29,15 @@
 /* int clone(int (*fn)(void *arg), void *child_stack, int flags, void *arg,
 	     void *parent_tidptr, void *tls, void *child_tidptr) */
 
-ENTRY (__clone)
+ENTRY (__clone, 3)
+
+	/* Align stack to 16 or 8 bytes per the ABI.  */
+#if _LOONGARCH_SIM == _ABILP64
+	addi.d	t0, zero, -16
+#elif _LOONGARCH_SIM == _ABILP32
+	addi.w	t0, zero, -8
+#endif
+	and	a1, a1, t0
 
 	/* Sanity check arguments.  */
 	beqz	a0, L (invalid)	/* No NULL function pointers.  */
@@ -66,7 +74,7 @@ L (error):
    its own function so that we can terminate the stack trace with our
    debug info.  */
 
-ENTRY (__thread_start)
+ENTRY (__thread_start, 3)
 L (thread_start):
 	/* Terminate call stack by noting ra is undefined.  Use a dummy
 	   .cfi_label to force starting the FDE.  */

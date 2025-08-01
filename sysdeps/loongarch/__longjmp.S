@@ -19,7 +19,7 @@
 #include <sysdep.h>
 #include <sys/asm.h>
 
-ENTRY (__longjmp)
+ENTRY (__longjmp, 3)
   REG_L ra, a0, 0*SZREG
   REG_L sp, a0, 1*SZREG
   REG_L x, a0,  2*SZREG

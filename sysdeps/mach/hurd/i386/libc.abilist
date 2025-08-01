@@ -29,6 +29,43 @@ GLIBC_2.11 mkostemps64 F
 GLIBC_2.11 mkstemps F
 GLIBC_2.11 mkstemps64 F
 GLIBC_2.13 __fentry__ F
+GLIBC_2.13_DEBIAN_19 _hurd_sigstate_delete F
+GLIBC_2.13_DEBIAN_19 _hurd_sigstate_lock F
+GLIBC_2.13_DEBIAN_19 _hurd_sigstate_pending F
+GLIBC_2.13_DEBIAN_19 _hurd_sigstate_set_global_rcv F
+GLIBC_2.13_DEBIAN_19 _hurd_sigstate_unlock F
+GLIBC_2.13_DEBIAN_31 __pthread_get_cleanup_stack F
+GLIBC_2.13_DEBIAN_31 pthread_attr_destroy F
+GLIBC_2.13_DEBIAN_31 pthread_attr_getdetachstate F
+GLIBC_2.13_DEBIAN_31 pthread_attr_getinheritsched F
+GLIBC_2.13_DEBIAN_31 pthread_attr_getschedparam F
+GLIBC_2.13_DEBIAN_31 pthread_attr_getschedpolicy F
+GLIBC_2.13_DEBIAN_31 pthread_attr_getscope F
+GLIBC_2.13_DEBIAN_31 pthread_attr_init F
+GLIBC_2.13_DEBIAN_31 pthread_attr_setdetachstate F
+GLIBC_2.13_DEBIAN_31 pthread_attr_setinheritsched F
+GLIBC_2.13_DEBIAN_31 pthread_attr_setschedparam F
+GLIBC_2.13_DEBIAN_31 pthread_attr_setschedpolicy F
+GLIBC_2.13_DEBIAN_31 pthread_attr_setscope F
+GLIBC_2.13_DEBIAN_31 pthread_cond_broadcast F
+GLIBC_2.13_DEBIAN_31 pthread_cond_destroy F
+GLIBC_2.13_DEBIAN_31 pthread_cond_init F
+GLIBC_2.13_DEBIAN_31 pthread_cond_signal F
+GLIBC_2.13_DEBIAN_31 pthread_cond_timedwait F
+GLIBC_2.13_DEBIAN_31 pthread_cond_wait F
+GLIBC_2.13_DEBIAN_31 pthread_condattr_destroy F
+GLIBC_2.13_DEBIAN_31 pthread_condattr_init F
+GLIBC_2.13_DEBIAN_31 pthread_equal F
+GLIBC_2.13_DEBIAN_31 pthread_exit F
+GLIBC_2.13_DEBIAN_31 pthread_getschedparam F
+GLIBC_2.13_DEBIAN_31 pthread_mutex_destroy F
+GLIBC_2.13_DEBIAN_31 pthread_mutex_init F
+GLIBC_2.13_DEBIAN_31 pthread_mutex_lock F
+GLIBC_2.13_DEBIAN_31 pthread_mutex_unlock F
+GLIBC_2.13_DEBIAN_31 pthread_self F
+GLIBC_2.13_DEBIAN_31 pthread_setcancelstate F
+GLIBC_2.13_DEBIAN_31 pthread_setcanceltype F
+GLIBC_2.13_DEBIAN_31 pthread_setschedparam F
 GLIBC_2.14 syncfs F
 GLIBC_2.15 __fdelt_chk F
 GLIBC_2.15 __fdelt_warn F
@@ -593,7 +630,7 @@ GLIBC_2.2.6 _libc_intl_domainname D 0x5
 GLIBC_2.2.6 _longjmp F
 GLIBC_2.2.6 _mcleanup F
 GLIBC_2.2.6 _mcount F
-GLIBC_2.2.6 _nl_default_dirname D 0xe
+GLIBC_2.2.6 _nl_default_dirname D 0x12
 GLIBC_2.2.6 _nl_domain_bindings D 0x4
 GLIBC_2.2.6 _nl_msg_cat_cntr D 0x4
 GLIBC_2.2.6 _null_auth D 0xc
@@ -1942,6 +1979,13 @@ GLIBC_2.2.6 xprt_register F
 GLIBC_2.2.6 xprt_unregister F
 GLIBC_2.21 __mach_host_self_ D 0x4
 GLIBC_2.21 __pthread_get_cleanup_stack F
+GLIBC_2.21 _hurd_exec_file_name F
+GLIBC_2.21 _hurd_sigstate_delete F
+GLIBC_2.21 _hurd_sigstate_lock F
+GLIBC_2.21 _hurd_sigstate_pending F
+GLIBC_2.21 _hurd_sigstate_set_global_rcv F
+GLIBC_2.21 _hurd_sigstate_unlock F
+GLIBC_2.21 mach_print F
 GLIBC_2.21 pthread_attr_destroy F
 GLIBC_2.21 pthread_attr_getdetachstate F
 GLIBC_2.21 pthread_attr_getinheritsched F

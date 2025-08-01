@@ -88,7 +88,7 @@ $(common-objpfx)errnos.d: $(mach-errnos-deps)
 	    -e 's, \.\./, $(..),g' > $@t
 	mv -f $@t $@
 
-$(hurd)/bits/errno.h: $(common-objpfx)stamp-errnos ;
+$(hurd)/bits/errno-disabled.h: $(common-objpfx)stamp-errnos ;
 $(common-objpfx)stamp-errnos: $(hurd)/errnos.awk $(errno.texinfo) \
 			      $(mach-errnos-deps) $(common-objpfx)errnos.d
 	$(AWK) -f $^ > $(hurd)/bits/errno.h-tmp
@@ -194,6 +194,10 @@ ifeq (hurd, $(subdir))
 sysdep_routines += cthreads
 endif
 
+ifeq (io, $(subdir))
+sysdep_routines += f_setlk
+endif
+
 ifeq ($(subdir),sunrpc)
 sysdep_headers += nfs/nfs.h
 endif
@@ -205,5 +209,7 @@ endif
 ifeq ($(subdir),nis)
 CFLAGS-ypclnt.c += -DUSE_BINDINGDIR=1
 endif
+
+LDLIBS-pthread.so += $(objdir)/hurd/libhurduser.so
 
 endif	# in-Makerules

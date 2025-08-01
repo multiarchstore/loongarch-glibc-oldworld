@@ -26,8 +26,17 @@ include Makeconfig
 
 
 # This is the default target; it makes everything except the tests.
-.PHONY: all
-all: lib others
+.PHONY: all help minihelp
+all: minihelp lib others
+
+help:
+	@sed '0,/^help-starts-here$$/d' Makefile.help
+
+minihelp:
+	@echo
+	@echo type \"make help\" for help with common glibc makefile targets
+	@echo
+
 
 ifneq ($(AUTOCONF),no)
 
@@ -171,6 +180,11 @@ case "$$toolname" in
   valgrind)
     exec env $(run-program-env) valgrind $(test-via-rtld-prefix) $${1+"$$@"}
     ;;
+  container)
+    exec env $(run-program-env) $(test-via-rtld-prefix) \
+      $(common-objdir)/support/test-container \
+      env $(run-program-env) $(test-via-rtld-prefix) $${1+"$$@"}
+    ;;
   *)
     usage
     ;;
@@ -186,7 +200,204 @@ $(common-objpfx)testrun.sh: $(common-objpfx)config.make \
 	mv -f $@T $@
 postclean-generated += testrun.sh
 
-others: $(common-objpfx)testrun.sh
+define debugglibc
+#!/bin/bash
+
+SOURCE_DIR="$(CURDIR)"
+BUILD_DIR="$(common-objpfx)"
+CMD_FILE="$(common-objpfx)debugglibc.gdb"
+CONTAINER=false
+DIRECT=true
+STATIC=false
+SYMBOLSFILE=true
+unset TESTCASE
+unset BREAKPOINTS
+unset ENVVARS
+
+usage()
+{
+cat << EOF
+Usage: $$0 [OPTIONS] <program>
+
+   Or: $$0 [OPTIONS] -- <program> [<args>]...
+
+  where <program> is the path to the program being tested,
+  and <args> are the arguments to be passed to it.
+
+Options:
+
+  -h, --help
+	Prints this message and leaves.
+
+  The following options require one argument:
+
+  -b, --breakpoint
+	Breakpoints to set at the beginning of the execution
+	(each breakpoint demands its own -b option, e.g. -b foo -b bar)
+  -e, --environment-variable
+	Environment variables to be set with 'exec-wrapper env' in GDB
+	(each environment variable demands its own -e option, e.g.
+	-e FOO=foo -e BAR=bar)
+
+  The following options do not take arguments:
+
+  -c, --in-container
+	Run the test case inside a container and automatically attach
+	GDB to it.
+  -i, --no-direct
+	Selects whether to pass the --direct flag to the program.
+	--direct is useful when debugging glibc test cases. It inhibits the
+	tests from forking and executing in a subprocess.
+	Default behaviour is to pass the --direct flag, except when the
+	program is run with user specified arguments using the "--" separator.
+  -s, --no-symbols-file
+	Do not tell GDB to load debug symbols from the program.
+EOF
+}
+
+# Parse input options
+while [[ $$# > 0 ]]
+do
+  key="$$1"
+  case $$key in
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    -b|--breakpoint)
+      BREAKPOINTS="break $$2\n$$BREAKPOINTS"
+      shift
+      ;;
+    -e|--environment-variable)
+      ENVVARS="$$2 $$ENVVARS"
+      shift
+      ;;
+    -c|--in-container)
+      CONTAINER=true
+      ;;
+    -i|--no-direct)
+      DIRECT=false
+      ;;
+    -s|--no-symbols-file)
+      SYMBOLSFILE=false
+      ;;
+    --)
+      shift
+      TESTCASE=$$1
+      COMMANDLINE="$$@"
+      # Don't add --direct when user specifies program arguments
+      DIRECT=false
+      break
+      ;;
+    *)
+      TESTCASE=$$1
+      COMMANDLINE=$$TESTCASE
+      ;;
+  esac
+  shift
+done
+
+# Check for required argument and if the testcase exists
+if [ ! -v TESTCASE ] || [ ! -f $${TESTCASE} ]
+then
+  usage
+  exit 1
+fi
+
+# Expand environment setup command
+if [ -v ENVVARS ]
+then
+  ENVVARSCMD="set exec-wrapper env $$ENVVARS"
+fi
+
+# Expand direct argument
+if [ "$$DIRECT" == true ]
+then
+  DIRECT="--direct"
+else
+  DIRECT=""
+fi
+
+# Check if the test case is static
+if file $${TESTCASE} | grep "statically linked" >/dev/null
+then
+  STATIC=true
+else
+  STATIC=false
+fi
+
+# Expand symbols loading command
+if [ "$$SYMBOLSFILE" == true ]
+then
+  SYMBOLSFILE="add-symbol-file $${TESTCASE}"
+else
+  SYMBOLSFILE=""
+fi
+
+# GDB commands template
+template ()
+{
+cat <<EOF
+set environment C -E -x c-header
+set auto-load safe-path $${BUILD_DIR}/nptl_db:\$$debugdir:\$$datadir/auto-load
+set libthread-db-search-path $${BUILD_DIR}/nptl_db
+__ENVVARS__
+__SYMBOLSFILE__
+break _dl_start
+run --library-path $(rpath-link):$${BUILD_DIR}/nptl_db \
+__COMMANDLINE__ __DIRECT__
+__BREAKPOINTS__
+EOF
+}
+
+# Generate the commands file for gdb initialization
+template | sed \
+  -e "s|__ENVVARS__|$$ENVVARSCMD|" \
+  -e "s|__SYMBOLSFILE__|$$SYMBOLSFILE|" \
+  -e "s|__COMMANDLINE__|$$COMMANDLINE|" \
+  -e "s|__DIRECT__|$$DIRECT|" \
+  -e "s|__BREAKPOINTS__|$$BREAKPOINTS|" \
+  > $$CMD_FILE
+
+echo
+echo "Debugging glibc..."
+echo "Build directory  : $$BUILD_DIR"
+echo "Source directory : $$SOURCE_DIR"
+echo "GLIBC Testcase   : $$TESTCASE"
+echo "GDB Commands     : $$CMD_FILE"
+echo "Env vars         : $$ENVVARS"
+echo
+
+if [ "$$CONTAINER" == true ]
+then
+# Use testrun.sh to start the test case with WAIT_FOR_DEBUGGER=1, then
+# automatically attach GDB to it.
+WAIT_FOR_DEBUGGER=1 $(common-objpfx)testrun.sh --tool=container $${TESTCASE} &
+gdb -x $${TESTCASE}.gdb
+elif [ "$$STATIC" == true ]
+then
+gdb $${TESTCASE}
+else
+# Start the test case debugging in two steps:
+#   1. the following command invokes gdb to run the loader;
+#   2. the commands file tells the loader to run the test case.
+gdb -q \
+  -x $${CMD_FILE} \
+  -d $${SOURCE_DIR} \
+  $${BUILD_DIR}/elf/ld.so
+fi
+endef
+
+# This is another handy script for debugging dynamically linked program
+# against the current libc build for testing.
+$(common-objpfx)debugglibc.sh: $(common-objpfx)config.make \
+			    $(..)Makeconfig $(..)Makefile
+	$(file >$@T,$(debugglibc))
+	chmod a+x $@T
+	mv -f $@T $@
+postclean-generated += debugglibc.sh debugglibc.gdb
+
+others: $(common-objpfx)testrun.sh $(common-objpfx)debugglibc.sh
 
 # Makerules creates a file `stubs' in each subdirectory, which
 # contains `#define __stub_FUNCTION' for each function defined in that
@@ -222,6 +433,14 @@ $(inst_includedir)/gnu/stubs.h: $(+force)
 install-others-nosubdir: $(installed-stubs)
 endif
 
+# If we're bootstrapping, install a dummy gnu/stubs.h along with the
+# other headers, so 'make install-headers' produces a useable include
+# tree.  Otherwise, install gnu/stubs.h later, after the rest of the
+# build is done.
+ifeq ($(install-bootstrap-headers),yes)
+install-headers: $(inst_includedir)/gnu/stubs.h $(installed-stubs) \
+		 $(inst_includedir)/$(lib-names-h-abi)
+endif
 
 # Since stubs.h is never needed when building the library, we simplify the
 # hairy installation process by producing it in place only as the last part
@@ -229,6 +448,14 @@ endif
 # iterates over all the subdirs; subdir_install in each subdir depends on
 # the subdir's stubs file.  Having more direct dependencies would result in
 # extra iterations over the list for subdirs and many recursive makes.
+ifeq ($(install-bootstrap-headers),yes)
+# gnu/stubs.h depends (via the subdir 'stubs' targets) on all the .o
+# files in GLIBC.  For bootstrapping a GCC/GLIBC pair, an empty
+# gnu/stubs.h is good enough.
+$(installed-stubs): include/stubs-bootstrap.h $(+force)
+	$(make-target-directory)
+	$(INSTALL_DATA) $< $@
+else
 $(installed-stubs): include/stubs-prologue.h subdir_install
 	$(make-target-directory)
 	@rm -f $(objpfx)stubs.h
@@ -237,6 +464,7 @@ $(installed-stubs): include/stubs-prologue.h subdir_install
 	then echo 'stubs.h unchanged'; \
 	else $(INSTALL_DATA) $(objpfx)stubs.h $@; fi
 	rm -f $(objpfx)stubs.h
+endif
 
 # This makes the Info or DVI file of the documentation from the Texinfo source.
 .PHONY: info dvi pdf html
@@ -434,3 +662,12 @@ FORCE:
 
 iconvdata/% localedata/% po/%: FORCE
 	$(MAKE) $(PARALLELMFLAGS) -C $(@D) $(@F)
+
+# Convenience target to rerun one test, from the top of the build tree
+# Example: make test t=wcsmbs/test-wcsnlen
+.PHONY: test
+test :
+	@-rm -f $(objpfx)$t.out
+	$(MAKE) subdir=$(patsubst %/,%,$(dir $t)) -C $(dir $t) ..=../ $(objpfx)$t.out
+	@cat $(objpfx)$t.test-result
+	@cat $(objpfx)$t.out

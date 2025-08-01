@@ -17,7 +17,7 @@ __libc_start_main (int (*main) (int, char **, char **),
 			    void *stack_end);
 */
 
-ENTRY (ENTRY_POINT)
+ENTRY (ENTRY_POINT, 3)
 	/* Terminate call stack by noting ra is undefined.  Use a dummy
 	   .cfi_label to force starting the FDE.  */
 	.cfi_label .Ldummy
